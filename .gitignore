@@ -1,0 +1,26 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Program keypairs — never commit deploy authority material
+programs/**/keypair.json
+*-keypair.json
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Env
+.env
+.env*.local
+
+# Local validators
+.surfpool/
+test-ledger/
+.anchor/
+
+# OS
+.DS_Store
