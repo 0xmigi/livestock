@@ -24,7 +24,9 @@ pub struct Redeem<'info> {
         bump = season.bump,
         has_one = vault,
         has_one = narrative_mint,
-        constraint = season.status == SeasonStatus::Closed @ SeasonVaultError::SeasonNotClosed,
+        constraint = (season.status == SeasonStatus::Closed
+            || season.status == SeasonStatus::Settled)
+            @ SeasonVaultError::SeasonNotClosed,
     )]
     pub season: Account<'info, Season>,
 
