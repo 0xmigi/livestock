@@ -44,6 +44,16 @@ Program tests (36, LiteSVM + curve unit tests):
 cargo build-sbf && cargo test -p narrative_markets
 ```
 
+Upgrade the devnet program (the upgrade authority is your Solana CLI wallet;
+the program keypair is only needed for a first deploy and is not committed):
+
+```bash
+cargo build-sbf && solana program deploy target/deploy/narrative_markets.so --program-id 7WbnkZ57UvAPzy3rNqErZW57xnhUdnqwXnDm34dGV2SX -u devnet
+```
+
+Do not pass `target/deploy/narrative_markets-keypair.json` as the program id:
+`cargo build-sbf` generates that file and it is a different, unrelated key.
+
 Seed devnet with a few narratives:
 
 ```bash
