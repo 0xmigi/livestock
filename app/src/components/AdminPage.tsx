@@ -20,8 +20,10 @@ import {
   marketMakerPda,
   narrativeMintPda,
   curveSolPda,
+  seasonClient,
   seasonPda,
   stockVaultPda,
+  vaultClient,
   vaultPda,
 } from "@/lib/program";
 import { pushActivity } from "@/lib/activity";
@@ -56,7 +58,7 @@ export function AdminPage() {
       const mint = new PublicKey(stockMint);
       const [v] = vaultPda(mint);
       const program = getProgram(dummyProvider(connection));
-      const acc = await program.account.vault.fetch(v);
+      const acc = await vaultClient(program).fetch(v);
       setVaultInfo(
         `vault ${v.toBase58().slice(0, 8)}… · seasonIndex ${acc.seasonIndex} · live ${
           (acc.liveSeason as PublicKey).equals(PublicKey.default)
@@ -149,7 +151,7 @@ export function AdminPage() {
       const mint = new PublicKey(stockMint);
       const program = getProgram(provider());
       const [vault] = vaultPda(mint);
-      const acc = await program.account.vault.fetch(vault);
+      const acc = await vaultClient(program).fetch(vault);
       const index = acc.seasonIndex as number;
       const [season] = seasonPda(vault, index);
       const [narrativeMint] = narrativeMintPda(vault, index);
@@ -183,10 +185,10 @@ export function AdminPage() {
       const mint = new PublicKey(stockMint);
       const program = getProgram(provider());
       const [vault] = vaultPda(mint);
-      const acc = await program.account.vault.fetch(vault);
+      const acc = await vaultClient(program).fetch(vault);
       const live = acc.liveSeason as PublicKey;
       if (live.equals(PublicKey.default)) throw new Error("no live season");
-      const s = await program.account.season.fetch(live);
+      const s = await seasonClient(program).fetch(live);
       const sig = await program.methods
         .closeSeason()
         .accounts({

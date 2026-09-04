@@ -16,8 +16,11 @@ import {
   getProgram,
   marketMakerPda,
   positionPda,
+  seasonClient,
   seasonPda,
   stockVaultPda,
+  toNum,
+  vaultClient,
   vaultPda,
 } from "@/lib/program";
 import { formatStock } from "@/lib/curve";
@@ -74,7 +77,7 @@ export function SeasonPage() {
     const [sv] = stockVaultPda(STOCK_MINT);
     const [mm] = marketMakerPda(STOCK_MINT);
     const program = getProgram(dummyProvider(connection));
-    const vaultAcc = await program.account.vault.fetch(v);
+    const vaultAcc = await vaultClient(program).fetch(v);
     const lastCreated = (vaultAcc.seasonIndex as number) - 1;
     if (lastCreated < 0) {
       setData(null);
@@ -84,7 +87,7 @@ export function SeasonPage() {
     const seasonPk = live.equals(PublicKey.default)
       ? seasonPda(v, lastCreated)[0]
       : live;
-    const s = await program.account.season.fetch(seasonPk);
+    const s = await seasonClient(program).fetch(seasonPk);
     const index = s.index as number;
 
     // Redeem/roll target: the latest closed season. That may be the previous
@@ -95,7 +98,7 @@ export function SeasonPage() {
     if (redeemStatus === "live" && index > 0) {
       try {
         const [prev] = seasonPda(v, index - 1);
-        const prevAcc = await program.account.season.fetch(prev);
+        const prevAcc = await seasonClient(program).fetch(prev);
         if (statusKey(prevAcc.status) === "closed") {
           redeemSeason = prev;
           redeemMint = prevAcc.narrativeMint as PublicKey;
@@ -111,10 +114,10 @@ export function SeasonPage() {
     try {
       const closedIndex =
         redeemStatus === "closed"
-          ? (await program.account.season.fetch(redeemSeason)).index
+          ? (await seasonClient(program).fetch(redeemSeason)).index
           : index;
       const [ns] = seasonPda(v, (closedIndex as number) + 1);
-      const nsAcc = await program.account.season.fetch(ns);
+      const nsAcc = await seasonClient(program).fetch(ns);
       nextSeason = ns;
       nextNarrativeMint = nsAcc.narrativeMint as PublicKey;
     } catch {
@@ -171,7 +174,7 @@ export function SeasonPage() {
       name: s.name as string,
       status: statusKey(s.status),
       redeemStatus,
-      endTs: Number(s.endTs),
+      endTs: toNum(s.endTs),
       supply: BigInt(s.narrativeSupply.toString()),
       remaining: BigInt(s.remainingSupply.toString()),
       narrativeMint: s.narrativeMint as PublicKey,

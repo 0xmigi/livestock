@@ -93,6 +93,59 @@ export function getProgram(provider: AnchorProvider) {
   return new Program(IDL, provider);
 }
 
+type AccountFetcher<T> = { fetch: (pk: PublicKey) => Promise<T> };
+
+export type VaultAccount = {
+  authority: PublicKey;
+  stockMint: PublicKey;
+  stockVaultAta: PublicKey;
+  marketMakerAta: PublicKey;
+  liveSeason: PublicKey;
+  seasonIndex: number;
+  totalStock: { toString: () => string };
+  pendingClaims: { toString: () => string };
+  stockPerSol: { toString: () => string };
+  bump: number;
+};
+
+export type SeasonAccount = {
+  vault: PublicKey;
+  index: number;
+  name: string;
+  narrativeMint: PublicKey;
+  startTs: { toString: () => string };
+  endTs: { toString: () => string } | number;
+  status: Record<string, unknown>;
+  curveSolVault: PublicKey;
+  stockBought: { toString: () => string };
+  narrativeSupply: { toString: () => string };
+  feeBps: number;
+  base: { toString: () => string };
+  slope: { toString: () => string };
+  decimals: number;
+  redeemableStock: { toString: () => string };
+  redeemableSupply: { toString: () => string };
+  remainingStock: { toString: () => string };
+  remainingSupply: { toString: () => string };
+  solReserve: { toString: () => string };
+  bump: number;
+};
+
+export function vaultClient(program: Program) {
+  return (program.account as unknown as { vault: AccountFetcher<VaultAccount> })
+    .vault;
+}
+
+export function seasonClient(program: Program) {
+  return (
+    program.account as unknown as { season: AccountFetcher<SeasonAccount> }
+  ).season;
+}
+
+export function toNum(x: { toString: () => string } | number): number {
+  return typeof x === "number" ? x : Number(x.toString());
+}
+
 export function dummyProvider(connection: Connection) {
   return new AnchorProvider(
     connection,

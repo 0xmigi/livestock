@@ -9,8 +9,11 @@ import {
   dummyProvider,
   getProgram,
   marketMakerPda,
+  seasonClient,
   seasonPda,
   stockVaultPda,
+  toNum,
+  vaultClient,
   vaultPda,
 } from "@/lib/program";
 import { formatStock } from "@/lib/curve";
@@ -66,17 +69,17 @@ export function VaultHome() {
     setMarketMaker(mm);
     const program = getProgram(dummyProvider(connection));
     try {
-      const vaultAcc = await program.account.vault.fetch(v);
+      const vaultAcc = await vaultClient(program).fetch(v);
       setAuthority(vaultAcc.authority as PublicKey);
       const ata = await getAccount(connection, sv);
       setVaultStock(ata.amount);
       const live = vaultAcc.liveSeason as PublicKey;
       if (!live.equals(PublicKey.default)) {
-        const s = await program.account.season.fetch(live);
+        const s = await seasonClient(program).fetch(live);
         setSeason({
           name: s.name as string,
           status: statusKey(s.status),
-          endTs: Number(s.endTs),
+          endTs: toNum(s.endTs),
           supply: BigInt(s.narrativeSupply.toString()),
           base: BigInt(s.base.toString()),
           slope: BigInt(s.slope.toString()),
@@ -104,11 +107,11 @@ export function VaultHome() {
         const idx = (vaultAcc.seasonIndex as number) - 1;
         if (idx >= 0) {
           const [last] = seasonPda(v, idx);
-          const s = await program.account.season.fetch(last);
+          const s = await seasonClient(program).fetch(last);
           setSeason({
             name: s.name as string,
             status: statusKey(s.status),
-            endTs: Number(s.endTs),
+            endTs: toNum(s.endTs),
             supply: BigInt(s.narrativeSupply.toString()),
             base: BigInt(s.base.toString()),
             slope: BigInt(s.slope.toString()),
