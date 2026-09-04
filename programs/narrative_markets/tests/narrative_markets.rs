@@ -1,0 +1,583 @@
+//! Every invariant in SPEC.md §9 gets a test here.
+
+mod common;
+
+use {
+    common::*,
+    narrative_markets::{
+        curve::{apply_bps, buy_cost, sell_refund},
+        state::{Narrative, Status},
+    },
+    solana_address::Address,
+    solana_keypair::Keypair,
+    solana_signer::Signer,
+};
+
+const STOCK_FUNDING: u64 = 100_000_000_000; // 1,000 units of an 8-decimal mint
+
+struct Market {
+    env: Env,
+    narrative: Address,
+    creator_fee: Address,
+}
+
+/// A live narrative with the default curve, plus the creator's fee account.
+fn setup() -> Market {
+    let mut env = Env::new();
+    let creator = env.creator.insecure_clone();
+    let creator_key = creator.pubkey();
+    let expiry = env.now() + DURATION;
+
+    env.send(
+        &[create_narrative_ix(
+            &env,
+            &creator_key,
+            "ROBOTAXI",
+            "RBTX",
+            expiry,
+            BASE_PRICE,
+            SLOPE,
+            FEE_BPS,
+            SELL_TAX_BPS,
+        )],
+        &[&creator],
+    )
+    .expect("create_narrative");
+
+    let narrative = env.narrative(&creator_key, "ROBOTAXI");
+    let stock_mint = env.stock_mint;
+    let creator_fee = env.create_token_account(&creator_key, &stock_mint);
+
+    Market {
+        env,
+        narrative,
+        creator_fee,
+    }
+}
+
+/// A funded holder: stock to spend, a narrative token account, and a stock
+/// account to receive payouts.
+struct Holder {
+    wallet: Keypair,
+    tokens: Address,
+    stock: Address,
+}
+
+fn holder(m: &mut Market) -> Holder {
+    let wallet = m.env.new_wallet(10 * SOL);
+    let key = wallet.pubkey();
+    let narrative_mint = m.env.narrative_mint(&m.narrative);
+    let stock_mint = m.env.stock_mint;
+
+    let tokens = m.env.create_token_account(&key, &narrative_mint);
+    let stock = m.env.create_token_account(&key, &stock_mint);
+    m.env.mint_stock_to(&stock, STOCK_FUNDING);
+
+    Holder {
+        wallet,
+        tokens,
+        stock,
+    }
+}
+
+fn buy(m: &mut Market, h: &Holder, tokens: u64) {
+    let ix = buy_ix(
+        &m.env,
+        &h.wallet.pubkey(),
+        &h.tokens,
+        &h.stock,
+        &m.creator_fee,
+        &m.narrative,
+        tokens,
+        u64::MAX,
+    );
+    m.env.send(&[ix], &[&h.wallet]).expect("buy");
+}
+
+fn state<T>(m: &Market, f: impl FnOnce(&Narrative) -> T) -> T {
+    let account = m.env.svm.get_account(&m.narrative).expect("narrative");
+    f(Narrative::from_bytes(&account.data).expect("decodes"))
+}
+
+fn vault_balance(m: &Market) -> u64 {
+    m.env.token_balance(&m.env.vault(&m.narrative))
+}
+
+fn expire(m: &mut Market) {
+    m.env.advance_clock(DURATION + 1);
+    let payer = m.env.creator.insecure_clone();
+    let ix = expire_ix(&m.env, &m.narrative);
+    m.env.send(&[ix], &[&payer]).expect("expire");
+}
+
+// --- creation -------------------------------------------------------------
+
+#[test]
+fn narrative_is_created_live_with_an_empty_vault() {
+    let m = setup();
+    state(&m, |s| {
+        assert_eq!(s.status().unwrap(), Status::Live);
+        assert_eq!(s.supply(), 0);
+        assert_eq!(s.name(), b"ROBOTAXI");
+        assert_eq!(s.symbol(), b"RBTX");
+        assert_eq!(s.base_price(), BASE_PRICE);
+    });
+    assert_eq!(vault_balance(&m), 0);
+}
+
+#[test]
+fn expiry_outside_the_permitted_window_is_rejected() {
+    let mut env = Env::new();
+    let creator = env.creator.insecure_clone();
+    let key = creator.pubkey();
+    let now = env.now();
+
+    for bad in [now + 60, now + 91 * 24 * HOUR, now - HOUR] {
+        let ix = create_narrative_ix(
+            &env, &key, "TOOSHORT", "TS", bad, BASE_PRICE, SLOPE, FEE_BPS, SELL_TAX_BPS,
+        );
+        assert!(
+            env.send(&[ix], &[&creator]).is_err(),
+            "expiry {bad} should be rejected",
+        );
+    }
+}
+
+#[test]
+fn degenerate_curve_parameters_are_rejected() {
+    let mut env = Env::new();
+    let creator = env.creator.insecure_clone();
+    let key = creator.pubkey();
+    let expiry = env.now() + DURATION;
+
+    // Zero base, zero slope, and an absurd fee each fail.
+    for (base, slope, fee) in [(0, SLOPE, FEE_BPS), (BASE_PRICE, 0, FEE_BPS), (BASE_PRICE, SLOPE, 5_000)] {
+        let ix = create_narrative_ix(
+            &env, &key, "BAD", "BAD", expiry, base, slope, fee, SELL_TAX_BPS,
+        );
+        assert!(env.send(&[ix], &[&creator]).is_err());
+    }
+}
+
+// --- the curve ------------------------------------------------------------
+
+#[test]
+fn buying_moves_stock_into_the_vault_and_pays_the_creator() {
+    let mut m = setup();
+    let h = holder(&mut m);
+
+    let cost = buy_cost(0, 1_000, BASE_PRICE, SLOPE).unwrap();
+    let fee = apply_bps(cost, FEE_BPS).unwrap();
+
+    buy(&mut m, &h, 1_000);
+
+    assert_eq!(m.env.token_balance(&h.tokens), 1_000);
+    assert_eq!(vault_balance(&m), cost);
+    assert_eq!(m.env.token_balance(&m.creator_fee), fee);
+    assert_eq!(m.env.token_balance(&h.stock), STOCK_FUNDING - cost - fee);
+    state(&m, |s| assert_eq!(s.supply(), 1_000));
+}
+
+#[test]
+fn the_second_buyer_pays_more_than_the_first() {
+    let mut m = setup();
+    let a = holder(&mut m);
+    let b = holder(&mut m);
+
+    let first = buy_cost(0, 500, BASE_PRICE, SLOPE).unwrap();
+    let second = buy_cost(500, 500, BASE_PRICE, SLOPE).unwrap();
+    assert!(second > first);
+
+    buy(&mut m, &a, 500);
+    buy(&mut m, &b, 500);
+    assert_eq!(vault_balance(&m), first + second);
+}
+
+#[test]
+fn buy_respects_the_slippage_limit() {
+    let mut m = setup();
+    let h = holder(&mut m);
+
+    let cost = buy_cost(0, 100, BASE_PRICE, SLOPE).unwrap();
+    let fee = apply_bps(cost, FEE_BPS).unwrap();
+    let ix = buy_ix(
+        &m.env,
+        &h.wallet.pubkey(),
+        &h.tokens,
+        &h.stock,
+        &m.creator_fee,
+        &m.narrative,
+        100,
+        cost + fee - 1, // one base unit short
+    );
+    assert!(m.env.send(&[ix], &[&h.wallet]).is_err());
+}
+
+// --- sells ----------------------------------------------------------------
+
+#[test]
+fn selling_walks_the_curve_back_down_and_the_tax_stays_behind() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 1_000);
+
+    let vault_before = vault_balance(&m);
+    let stock_before = m.env.token_balance(&h.stock);
+
+    let refund = sell_refund(1_000, 400, BASE_PRICE, SLOPE).unwrap();
+    let tax = apply_bps(refund, SELL_TAX_BPS).unwrap();
+    let payout = refund - tax;
+
+    let ix = sell_ix(
+        &m.env,
+        &h.wallet.pubkey(),
+        &h.tokens,
+        &h.stock,
+        &m.narrative,
+        400,
+        0,
+    );
+    m.env.send(&[ix], &[&h.wallet]).expect("sell");
+
+    assert_eq!(m.env.token_balance(&h.tokens), 600);
+    assert_eq!(m.env.token_balance(&h.stock), stock_before + payout);
+    assert_eq!(
+        vault_balance(&m),
+        vault_before - payout,
+        "the tax must remain in the vault for the holders who stayed",
+    );
+    assert!(tax > 0);
+    state(&m, |s| assert_eq!(s.supply(), 600));
+}
+
+#[test]
+fn cannot_sell_more_than_the_supply() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 100);
+
+    let ix = sell_ix(
+        &m.env,
+        &h.wallet.pubkey(),
+        &h.tokens,
+        &h.stock,
+        &m.narrative,
+        200,
+        0,
+    );
+    assert!(m.env.send(&[ix], &[&h.wallet]).is_err());
+}
+
+// --- expiry ---------------------------------------------------------------
+
+#[test]
+fn nobody_can_expire_early_including_the_creator() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 100);
+
+    let creator = m.env.creator.insecure_clone();
+    let ix = expire_ix(&m.env, &m.narrative);
+    assert!(
+        m.env.send(&[ix], &[&creator]).is_err(),
+        "the creator must have no privilege to expire early",
+    );
+
+    let stranger = m.env.new_wallet(SOL);
+    let ix = expire_ix(&m.env, &m.narrative);
+    assert!(m.env.send(&[ix], &[&stranger]).is_err());
+}
+
+#[test]
+fn anyone_can_expire_once_the_date_passes() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 100);
+
+    m.env.advance_clock(DURATION + 1);
+    let stranger = m.env.new_wallet(SOL);
+    let ix = expire_ix(&m.env, &m.narrative);
+    m.env.send(&[ix], &[&stranger]).expect("permissionless");
+
+    state(&m, |s| assert_eq!(s.status().unwrap(), Status::Expired));
+}
+
+#[test]
+fn trading_stops_at_expiry_even_before_expire_is_called() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 100);
+
+    m.env.advance_clock(DURATION + 1);
+
+    let ix = buy_ix(
+        &m.env,
+        &h.wallet.pubkey(),
+        &h.tokens,
+        &h.stock,
+        &m.creator_fee,
+        &m.narrative,
+        10,
+        u64::MAX,
+    );
+    assert!(m.env.send(&[ix], &[&h.wallet]).is_err(), "no buys past expiry");
+
+    let ix = sell_ix(
+        &m.env,
+        &h.wallet.pubkey(),
+        &h.tokens,
+        &h.stock,
+        &m.narrative,
+        10,
+        0,
+    );
+    assert!(m.env.send(&[ix], &[&h.wallet]).is_err(), "no sells past expiry");
+}
+
+#[test]
+fn expiry_freezes_the_numbers_and_revokes_the_mint_authority() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 1_000);
+
+    let mint = m.env.narrative_mint(&m.narrative);
+    assert!(m.env.mint_has_authority(&mint));
+
+    let vault_at_expiry = vault_balance(&m);
+    expire(&mut m);
+
+    state(&m, |s| {
+        assert_eq!(s.final_supply(), 1_000);
+        assert_eq!(s.final_vault(), vault_at_expiry);
+    });
+    assert!(
+        !m.env.mint_has_authority(&mint),
+        "an expired narrative must never mint again",
+    );
+}
+
+#[test]
+fn a_narrative_nobody_bought_settles_immediately() {
+    let mut m = setup();
+    expire(&mut m);
+    state(&m, |s| assert_eq!(s.status().unwrap(), Status::Settled));
+}
+
+// --- redemption -----------------------------------------------------------
+
+#[test]
+fn redeem_pays_pro_rata_and_the_last_holder_sweeps_the_dust() {
+    let mut m = setup();
+    let a = holder(&mut m);
+    let b = holder(&mut m);
+
+    buy(&mut m, &a, 333); // deliberately awkward split
+    buy(&mut m, &b, 667);
+
+    expire(&mut m);
+    let (pot, supply) = state(&m, |s| (s.final_vault(), s.final_supply()));
+    assert_eq!(supply, 1_000);
+
+    let a_stock_before = m.env.token_balance(&a.stock);
+    let ix = redeem_ix(&m.env, &a.wallet.pubkey(), &a.tokens, &a.stock, &m.narrative);
+    m.env.send(&[ix], &[&a.wallet]).expect("A redeems");
+
+    let a_payout = m.env.token_balance(&a.stock) - a_stock_before;
+    assert_eq!(a_payout, pot * 333 / 1_000);
+    assert_eq!(m.env.token_balance(&a.tokens), 0);
+
+    let b_stock_before = m.env.token_balance(&b.stock);
+    let ix = redeem_ix(&m.env, &b.wallet.pubkey(), &b.tokens, &b.stock, &m.narrative);
+    m.env.send(&[ix], &[&b.wallet]).expect("B redeems");
+
+    let b_payout = m.env.token_balance(&b.stock) - b_stock_before;
+    assert_eq!(
+        a_payout + b_payout,
+        pot,
+        "the whole pot must be paid out, no dust stranded",
+    );
+    assert_eq!(vault_balance(&m), 0);
+    state(&m, |s| assert_eq!(s.status().unwrap(), Status::Settled));
+}
+
+#[test]
+fn double_redeem_fails() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 500);
+    expire(&mut m);
+
+    let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative);
+    m.env.send(&[ix], &[&h.wallet]).expect("first redeem");
+
+    let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative);
+    assert!(m.env.send(&[ix], &[&h.wallet]).is_err());
+}
+
+#[test]
+fn cannot_redeem_before_expiry() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 100);
+
+    let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative);
+    assert!(m.env.send(&[ix], &[&h.wallet]).is_err());
+}
+
+// --- the economics --------------------------------------------------------
+
+/// The invariant the whole design rests on, proven end to end rather than in
+/// arithmetic: a buyer cannot mint and immediately redeem for a profit.
+#[test]
+fn buying_late_and_redeeming_is_always_a_loss() {
+    let mut m = setup();
+    let early = holder(&mut m);
+    buy(&mut m, &early, 10_000);
+
+    let sniper = holder(&mut m);
+    let spent_before = STOCK_FUNDING - m.env.token_balance(&sniper.stock);
+    buy(&mut m, &sniper, 500);
+    let spent = STOCK_FUNDING - m.env.token_balance(&sniper.stock) - spent_before;
+
+    expire(&mut m);
+
+    let before = m.env.token_balance(&sniper.stock);
+    let ix = redeem_ix(
+        &m.env,
+        &sniper.wallet.pubkey(),
+        &sniper.tokens,
+        &sniper.stock,
+        &m.narrative,
+    );
+    m.env.send(&[ix], &[&sniper.wallet]).expect("redeem");
+    let received = m.env.token_balance(&sniper.stock) - before;
+
+    assert!(
+        received < spent,
+        "buy-and-redeem must lose: spent {spent}, received {received}",
+    );
+}
+
+/// The product's actual claim: buy early into a narrative that keeps growing
+/// and you redeem more stock than you paid in.
+#[test]
+fn an_early_buyer_redeems_more_stock_than_they_paid() {
+    let mut m = setup();
+    let early = holder(&mut m);
+
+    let paid = buy_cost(0, 1_000, BASE_PRICE, SLOPE).unwrap();
+    let fee = apply_bps(paid, FEE_BPS).unwrap();
+    buy(&mut m, &early, 1_000);
+
+    // The narrative takes off after them.
+    for _ in 0..4 {
+        let late = holder(&mut m);
+        buy(&mut m, &late, 5_000);
+    }
+
+    expire(&mut m);
+
+    let before = m.env.token_balance(&early.stock);
+    let ix = redeem_ix(
+        &m.env,
+        &early.wallet.pubkey(),
+        &early.tokens,
+        &early.stock,
+        &m.narrative,
+    );
+    m.env.send(&[ix], &[&early.wallet]).expect("redeem");
+    let received = m.env.token_balance(&early.stock) - before;
+
+    assert!(
+        received > paid + fee,
+        "an early buyer should gain: paid {} (incl. fee), received {received}",
+        paid + fee,
+    );
+}
+
+/// Nothing in the program lets the creator take stock out of the vault.
+#[test]
+fn the_creator_cannot_drain_the_vault() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, 1_000);
+
+    let creator = m.env.creator.insecure_clone();
+    let creator_key = creator.pubkey();
+    let stock_mint = m.env.stock_mint;
+    let creator_tokens = m.env.create_token_account(&creator_key, &stock_mint);
+    let creator_narrative = m
+        .env
+        .create_token_account(&creator_key, &m.env.narrative_mint(&m.narrative));
+
+    let vault_before = vault_balance(&m);
+
+    // Selling without holding any narrative tokens gets nothing.
+    let ix = sell_ix(
+        &m.env,
+        &creator_key,
+        &creator_narrative,
+        &creator_tokens,
+        &m.narrative,
+        1_000,
+        0,
+    );
+    assert!(m.env.send(&[ix], &[&creator]).is_err());
+
+    // Nor after expiry.
+    expire(&mut m);
+    let ix = redeem_ix(
+        &m.env,
+        &creator_key,
+        &creator_narrative,
+        &creator_tokens,
+        &m.narrative,
+    );
+    assert!(m.env.send(&[ix], &[&creator]).is_err());
+
+    assert_eq!(vault_balance(&m), vault_before);
+}
+
+// --- the whole loop -------------------------------------------------------
+
+#[test]
+fn the_full_lifecycle_works() {
+    let mut m = setup();
+
+    // Two people buy the story.
+    let a = holder(&mut m);
+    let b = holder(&mut m);
+    buy(&mut m, &a, 2_000);
+    buy(&mut m, &b, 3_000);
+    assert!(vault_balance(&m) > 0);
+    state(&m, |s| assert_eq!(s.supply(), 5_000));
+
+    // One changes their mind and takes the tax hit.
+    let ix = sell_ix(
+        &m.env,
+        &b.wallet.pubkey(),
+        &b.tokens,
+        &b.stock,
+        &m.narrative,
+        1_000,
+        0,
+    );
+    m.env.send(&[ix], &[&b.wallet]).expect("sell");
+    state(&m, |s| assert_eq!(s.supply(), 4_000));
+
+    // The date arrives and anyone can settle it.
+    expire(&mut m);
+
+    // Both convert into stock.
+    for h in [&a, &b] {
+        let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative);
+        m.env.send(&[ix], &[&h.wallet]).expect("redeem");
+        assert_eq!(m.env.token_balance(&h.tokens), 0);
+    }
+
+    assert_eq!(vault_balance(&m), 0);
+    state(&m, |s| {
+        assert_eq!(s.status().unwrap(), Status::Settled);
+        assert_eq!(s.supply(), 0);
+    });
+}
