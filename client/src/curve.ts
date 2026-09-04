@@ -8,6 +8,18 @@
 
 export const BPS_DENOMINATOR = 10_000n;
 
+/**
+ * Narrative mints carry **0 decimals** — one token is one integer unit.
+ *
+ * Launchpad convention is 6, and this deviates on purpose. Over a 6-decimal
+ * supply a linear slope is a fraction far below 1 and floors to zero in
+ * integer arithmetic; scaling it back reintroduces a division whose flooring
+ * can make marginal price equal average. "Marginal strictly exceeds average"
+ * is what makes buying and immediately redeeming always a loss, so whole units
+ * win over matching the convention here.
+ */
+export const NARRATIVE_DECIMALS = 0;
+
 /** Curve parameters, as stored on a narrative. */
 export type CurveParams = {
   basePrice: bigint;

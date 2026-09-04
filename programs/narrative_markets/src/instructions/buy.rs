@@ -32,13 +32,13 @@ const NARRATIVE: usize = 1;
 /// Accounts:
 /// 0. `[signer]` buyer
 /// 1. `[writable]` narrative PDA
-/// 2. `[writable]` narrative mint PDA
+/// 2. `[writable]` narrative mint
 /// 3. `[writable]` buyer's narrative token account
 /// 4. `[writable]` buyer's stock token account — the source of payment
 /// 5. `[writable]` vault token account
 /// 6. `[writable]` creator's stock token account — receives the fee
 /// 7. `[]` stock mint
-/// 8. `[]` token program — classic SPL, for the narrative mint
+/// 8. `[]` narrative token program — Token-2022
 /// 9. `[]` stock token program
 pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
     let tokens_out = read_u64(data, 0)?;

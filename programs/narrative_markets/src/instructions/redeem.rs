@@ -22,12 +22,12 @@ const NARRATIVE: usize = 1;
 /// Accounts:
 /// 0. `[signer]` holder
 /// 1. `[writable]` narrative PDA
-/// 2. `[writable]` narrative mint PDA
+/// 2. `[writable]` narrative mint
 /// 3. `[writable]` holder's narrative token account
 /// 4. `[writable]` holder's stock token account — receives the payout
 /// 5. `[writable]` vault token account
 /// 6. `[]` stock mint
-/// 7. `[]` token program — classic SPL, for the narrative mint
+/// 7. `[]` narrative token program — Token-2022
 /// 8. `[]` stock token program
 pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
     let (tokens, payout) = {

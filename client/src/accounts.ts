@@ -12,6 +12,12 @@ const addressDecoder = getAddressDecoder();
 const HEADER = 2;
 
 export const NARRATIVE_DISCRIMINATOR = 1;
+/**
+ * Layout version. The account size did not change between v1 and v2, so
+ * without checking this an older account decodes into the wrong fields
+ * instead of being rejected.
+ */
+export const NARRATIVE_VERSION = 2;
 export const NARRATIVE_ACCOUNT_LEN = HEADER + 280;
 
 export enum Status {
@@ -68,6 +74,11 @@ export function decodeNarrative(data: Uint8Array): Narrative {
       `expected a Narrative account, got discriminator ${data[0]}`,
     );
   }
+  if (data[1] !== NARRATIVE_VERSION) {
+    throw new Error(
+      `Narrative layout v${data[1]}, expected v${NARRATIVE_VERSION}`,
+    );
+  }
 
   const v = view(data);
   const nameLen = data[HEADER + 263];
@@ -91,7 +102,7 @@ export function decodeNarrative(data: Uint8Array): Narrative {
     feeBps: v.getUint16(HEADER + 258, true),
     sellTaxBps: v.getUint16(HEADER + 260, true),
     status: data[HEADER + 262] as Status,
-    stockDecimals: data[HEADER + 267],
+    stockDecimals: data[HEADER + 266],
   };
 }
 

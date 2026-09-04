@@ -16,31 +16,49 @@ import {
   createTransactionMessage,
   getBase64Decoder,
   getTransactionEncoder,
+  partiallySignTransaction,
   pipe,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   type Address,
   type Instruction,
+  type KeyPairSigner,
 } from "@solana/kit";
 import { describeTransactionError } from "@nm/client";
 
 import { rpc } from "./config";
 
-/** Compiles instructions into wire bytes for `feePayer` to sign. */
+/**
+ * Compiles instructions into wire bytes for `feePayer` to sign.
+ *
+ * `localSigners` are keypairs the browser holds — currently just a freshly
+ * generated mint, which has to sign its own `CreateAccount`. They sign here
+ * and Privy adds the fee payer's signature afterwards, so the transaction
+ * reaches an RPC with both.
+ */
 export async function buildTransaction(
   feePayer: Address,
   instructions: Instruction[],
+  localSigners: KeyPairSigner[] = [],
 ): Promise<Uint8Array> {
   const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
 
-  return pipe(
+  const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(feePayer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
     (m) => appendTransactionMessageInstructions(instructions, m),
-    (m) => compileTransaction(m),
-    (tx) => new Uint8Array(getTransactionEncoder().encode(tx)),
   );
+
+  const compiled = compileTransaction(message);
+  const signed = localSigners.length
+    ? await partiallySignTransaction(
+        localSigners.map((s) => s.keyPair),
+        compiled,
+      )
+    : compiled;
+
+  return new Uint8Array(getTransactionEncoder().encode(signed));
 }
 
 /** Broadcasts a signed transaction and waits for confirmation. */
@@ -98,11 +116,17 @@ export async function signAndSend(
   feePayer: Address,
   instructions: Instruction[],
   sign: (transaction: Uint8Array) => Promise<Uint8Array>,
+  localSigners: KeyPairSigner[] = [],
 ): Promise<string> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const transaction = await buildTransaction(feePayer, instructions);
+    // Rebuilt each attempt, so a retry re-signs against a fresh blockhash.
+    const transaction = await buildTransaction(
+      feePayer,
+      instructions,
+      localSigners,
+    );
     const signed = await sign(transaction);
     try {
       return await broadcast(signed);

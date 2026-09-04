@@ -40,6 +40,7 @@ import {
   SOLANA_CHAIN,
   STOCK_DECIMALS,
   STOCK_SYMBOL,
+  TOKEN_2022_PROGRAM,
 } from "@/lib/config";
 import type { NarrativeRow, Position } from "@/lib/narratives";
 import { signAndSend, toUserMessage } from "@/lib/tx";
@@ -164,7 +165,11 @@ export function BuyPanel({
   const buy = async () => {
     const stock = narrative.stockTokenProgram;
     const stockAta = await ataFor(narrative.stockMint, owner, stock);
-    const tokenAta = await ataFor(narrative.narrativeMint, owner);
+    const tokenAta = await ataFor(
+      narrative.narrativeMint,
+      owner,
+      TOKEN_2022_PROGRAM,
+    );
     const creatorFee = await ataFor(narrative.stockMint, narrative.creator, stock);
 
     await run(owner, [
@@ -173,6 +178,7 @@ export function BuyPanel({
         ata: tokenAta,
         owner,
         mint: narrative.narrativeMint,
+        tokenProgram: TOKEN_2022_PROGRAM,
       }),
       getCreateAssociatedTokenIdempotentInstruction({
         payer: createNoopSigner(owner),
@@ -200,7 +206,11 @@ export function BuyPanel({
   const sell = async () => {
     const stock = narrative.stockTokenProgram;
     const stockAta = await ataFor(narrative.stockMint, owner, stock);
-    const tokenAta = await ataFor(narrative.narrativeMint, owner);
+    const tokenAta = await ataFor(
+      narrative.narrativeMint,
+      owner,
+      TOKEN_2022_PROGRAM,
+    );
 
     await run(owner, [
       getCreateAssociatedTokenIdempotentInstruction({
@@ -354,7 +364,11 @@ export function RedeemPanel({
   const redeem = async () => {
     const stock = narrative.stockTokenProgram;
     const stockAta = await ataFor(narrative.stockMint, owner, stock);
-    const tokenAta = await ataFor(narrative.narrativeMint, owner);
+    const tokenAta = await ataFor(
+      narrative.narrativeMint,
+      owner,
+      TOKEN_2022_PROGRAM,
+    );
 
     await run(owner, [
       getCreateAssociatedTokenIdempotentInstruction({

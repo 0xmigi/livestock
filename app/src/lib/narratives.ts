@@ -12,7 +12,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   decodeNarrative,
   decodeTokenAmount,
-  findNarrativeMint,
   findVault,
   NARRATIVE_ACCOUNT_LEN,
   NARRATIVE_DISCRIMINATOR,
@@ -25,7 +24,7 @@ import {
 } from "@solana-program/token";
 import type { Address } from "@solana/kit";
 
-import { rpc, STOCK_MINT, TOKEN_PROGRAM } from "./config";
+import { rpc, STOCK_MINT, TOKEN_2022_PROGRAM, TOKEN_PROGRAM } from "./config";
 
 export type NarrativeRow = Narrative & {
   address: Address;
@@ -169,7 +168,13 @@ export function useNarrative(
       setError(null);
 
       if (owner) {
-        const tokenAccount = await ata(decoded.narrativeMint, owner);
+        // Narrative mints are Token-2022, so their ATAs derive differently
+        // from a classic-SPL one.
+        const tokenAccount = await ata(
+          decoded.narrativeMint,
+          owner,
+          TOKEN_2022_PROGRAM,
+        );
         const stockAccount = await ata(
           decoded.stockMint,
           owner,
@@ -225,4 +230,4 @@ export function formatCountdown(seconds: number): string {
   return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
-export { findNarrativeMint, findVault, ata };
+export { findVault, ata };

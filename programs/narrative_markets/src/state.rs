@@ -56,7 +56,10 @@ pub const MAX_FEE_BPS: u16 = 1_000;
 pub const MAX_SELL_TAX_BPS: u16 = 2_000;
 
 const DISCRIMINATOR: u8 = 1;
-const VERSION: u8 = 1;
+/// Bumped when the payload layout changes. The account size did not change
+/// between v1 and v2, so without checking this an old account would decode
+/// silently into the wrong fields rather than being rejected.
+const VERSION: u8 = 2;
 const HEADER: usize = 2;
 
 /// Lifecycle. There is no path back to `Live`.
@@ -172,6 +175,11 @@ impl Narrative {
         }
         // Guards against type cosplay — passing some other account's bytes.
         if data[0] != DISCRIMINATOR {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        // A stale layout is worse than a missing account: same size, wrong
+        // fields.
+        if data[1] != VERSION {
             return Err(ProgramError::InvalidAccountData);
         }
         Ok(())

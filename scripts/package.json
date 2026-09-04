@@ -11,6 +11,7 @@
     "@nm/client": "workspace:*",
     "@solana-program/system": "^0.14.1",
     "@solana-program/token": "^0.16.1",
+    "@solana-program/token-2022": "^0.16.1",
     "@solana/kit": "^8.2.0"
   },
   "devDependencies": {

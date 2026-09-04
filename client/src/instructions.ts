@@ -10,8 +10,14 @@ import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import {
   NARRATIVE_MARKETS_PROGRAM_ID,
   SYSTEM_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
 } from "./pdas.ts";
+
+/**
+ * Narrative mints are Token-2022, matching what launchpads issue. The *stock*
+ * may be either program, so it is always passed explicitly.
+ */
+const NARRATIVE_TOKEN_PROGRAM_ID = TOKEN_2022_PROGRAM_ID;
 
 export enum NarrativeInstruction {
   CreateNarrative = 0,
@@ -103,10 +109,9 @@ export function getCreateNarrativeInstruction(
       ws(input.creator),
       w(input.narrative),
       r(input.stockMint),
-      w(input.narrativeMint),
+      r(input.narrativeMint),
       r(input.vault),
       r(SYSTEM_PROGRAM_ID),
-      r(TOKEN_PROGRAM_ID),
       r(input.stockTokenProgram),
     ],
     data: encode(
@@ -153,7 +158,7 @@ export function getBuyInstruction(input: BuyInput): Instruction {
       w(input.vault),
       w(input.creatorFeeAccount),
       r(input.stockMint),
-      r(TOKEN_PROGRAM_ID),
+      r(NARRATIVE_TOKEN_PROGRAM_ID),
       r(input.stockTokenProgram),
     ],
     data: encode(
@@ -189,7 +194,7 @@ export function getSellInstruction(input: SellInput): Instruction {
       w(input.sellerStockAccount),
       w(input.vault),
       r(input.stockMint),
-      r(TOKEN_PROGRAM_ID),
+      r(NARRATIVE_TOKEN_PROGRAM_ID),
       r(input.stockTokenProgram),
     ],
     data: encode(
@@ -214,7 +219,7 @@ export function getExpireInstruction(input: ExpireInput): Instruction {
       w(input.narrative),
       w(input.narrativeMint),
       r(input.vault),
-      r(TOKEN_PROGRAM_ID),
+      r(NARRATIVE_TOKEN_PROGRAM_ID),
     ],
     data: encode(NarrativeInstruction.Expire),
   };
@@ -243,7 +248,7 @@ export function getRedeemInstruction(input: RedeemInput): Instruction {
       w(input.holderStockAccount),
       w(input.vault),
       r(input.stockMint),
-      r(TOKEN_PROGRAM_ID),
+      r(NARRATIVE_TOKEN_PROGRAM_ID),
       r(input.stockTokenProgram),
     ],
     data: encode(NarrativeInstruction.Redeem),

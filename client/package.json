@@ -11,13 +11,17 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@solana-program/system": "^0.14.1",
+    "@solana-program/token-2022": "^0.16.1",
     "@solana/kit": "^8.2.0"
   },
   "devDependencies": {

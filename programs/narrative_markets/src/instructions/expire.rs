@@ -22,9 +22,9 @@ const NARRATIVE: usize = 0;
 
 /// Accounts:
 /// 0. `[writable]` narrative PDA
-/// 1. `[writable]` narrative mint PDA
+/// 1. `[writable]` narrative mint
 /// 2. `[]` vault token account
-/// 3. `[]` token program
+/// 3. `[]` narrative token program — Token-2022
 pub fn expire(accounts: &mut [AccountView]) -> ProgramResult {
     let now = Clock::get()?.unix_timestamp;
 

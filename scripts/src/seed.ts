@@ -15,11 +15,12 @@ import {
   buyCost,
   applyBps,
   findNarrative,
-  findNarrativeMint,
   findVault,
   formatStock,
   getBuyInstruction,
   getCreateNarrativeInstruction,
+  getCreateNarrativeMintInstructions,
+  getNarrativeMintSize,
   usdToStock,
 } from "@nm/client";
 import {
@@ -27,6 +28,7 @@ import {
   getCreateAssociatedTokenIdempotentInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
+import { TOKEN_2022_PROGRAM_ADDRESS } from "@solana-program/token-2022";
 import {
   address,
   appendTransactionMessageInstructions,
@@ -35,6 +37,7 @@ import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
+  generateKeyPairSigner,
   getSignatureFromTransaction,
   pipe,
   sendAndConfirmTransactionFactory,
@@ -75,6 +78,19 @@ async function send(
   return getSignatureFromTransaction(signed);
 }
 
+/** Strips API keys out of an RPC URL before it reaches a log or a screen. */
+function redact(url: string): string {
+  try {
+    const parsed = new URL(url);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/key|token|secret/i.test(key)) parsed.searchParams.set(key, "…");
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 async function loadCliSigner(): Promise<KeyPairSigner> {
   const path =
     process.env.KEYPAIR ?? join(homedir(), ".config", "solana", "id.json");
@@ -100,6 +116,13 @@ async function stockTokenProgramOf(mint: Address): Promise<Address> {
   return value.owner as Address;
 }
 
+/**
+ * Seeded mints get a placeholder metadata URI — the app's upload route is what
+ * produces real ones, and a dev seed has no image to upload.
+ */
+const METADATA_URI =
+  process.env.METADATA_URI ?? "https://example.invalid/narrative.json";
+
 const NARRATIVES = [
   { name: "Robotaxi Austin", symbol: "RBTX", days: 14, buy: 400 },
   { name: "FSD v14", symbol: "FSD", days: 7, buy: 150 },
@@ -112,7 +135,7 @@ async function main(): Promise<void> {
   const stockMint = address(stockMintRaw);
 
   const signer = await loadCliSigner();
-  console.log(`\nRPC        ${RPC_URL}`);
+  console.log(`\nRPC        ${redact(RPC_URL)}`);
   console.log(`creator    ${signer.address}`);
   console.log(`stock      ${stockMint}\n`);
 
@@ -124,21 +147,36 @@ async function main(): Promise<void> {
     (usdToStock(10, STOCK_PRICE_USD, STOCK_DECIMALS) - basePrice) / 1_000_000n;
 
   for (const spec of NARRATIVES) {
-    const [narrative] = await findNarrative(stockMint, signer.address, spec.name);
-    const [narrativeMint] = await findNarrativeMint(narrative);
+    // The mint is a keypair now, so a fresh one is generated per narrative and
+    // the narrative address hangs off it.
+    const mint = await generateKeyPairSigner();
+    const [narrative] = await findNarrative(mint.address);
+    const narrativeMint = mint.address;
     const [vault] = await findVault(narrative, stockMint, stockTokenProgram);
-
-    const existing = await rpc.getAccountInfo(narrative).send();
-    if (existing.value) {
-      console.log(`· ${spec.name} already exists — ${narrative}`);
-      continue;
-    }
 
     const expiryTs = BigInt(
       Math.floor(Date.now() / 1000) + spec.days * 24 * 3600,
     );
 
+    const { fundFor } = getNarrativeMintSize(
+      spec.name,
+      spec.symbol,
+      METADATA_URI,
+    );
+    const lamports = await rpc
+      .getMinimumBalanceForRentExemption(BigInt(fundFor))
+      .send();
+
     await send(signer, [
+      ...getCreateNarrativeMintInstructions({
+        payer: signer,
+        mint,
+        narrative,
+        name: spec.name,
+        symbol: spec.symbol,
+        uri: METADATA_URI,
+        lamports,
+      }),
       getCreateAssociatedTokenIdempotentInstruction({
         payer: signer,
         ata: vault,
@@ -170,7 +208,11 @@ async function main(): Promise<void> {
       const total = cost + applyBps(cost, 100);
 
       const stockAta = await ata(stockMint, signer.address, stockTokenProgram);
-      const tokenAta = await ata(narrativeMint, signer.address);
+      const tokenAta = await ata(
+        narrativeMint,
+        signer.address,
+        TOKEN_2022_PROGRAM_ADDRESS,
+      );
       const creatorFee = stockAta;
 
       await send(signer, [
@@ -179,6 +221,7 @@ async function main(): Promise<void> {
           ata: tokenAta,
           owner: signer.address,
           mint: narrativeMint,
+          tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
         }),
         getBuyInstruction({
           buyer: signer.address,

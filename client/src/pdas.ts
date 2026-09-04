@@ -28,29 +28,18 @@ const bytes = (a: Address): Uint8Array =>
   new Uint8Array(addressEncoder.encode(a));
 
 /**
- * `["narrative", stock_mint, creator, name]`
+ * `["narrative", narrative_mint]`
  *
- * Seeding on the name means one creator gets one narrative per name per stock,
- * while anyone else may reuse the name.
+ * The mint is a plain keypair the creator brings — which is what allows a
+ * vanity address to be ground — so the narrative account hangs off it. One
+ * fixed seed, and no name bytes to thread through signer-seed arrays.
  */
 export function findNarrative(
-  stockMint: Address,
-  creator: Address,
-  name: string,
+  narrativeMint: Address,
 ): Promise<ProgramDerivedAddress> {
   return getProgramDerivedAddress({
     programAddress: NARRATIVE_MARKETS_PROGRAM_ID,
-    seeds: [seed("narrative"), bytes(stockMint), bytes(creator), seed(name)],
-  });
-}
-
-/** `["mint", narrative]` */
-export function findNarrativeMint(
-  narrative: Address,
-): Promise<ProgramDerivedAddress> {
-  return getProgramDerivedAddress({
-    programAddress: NARRATIVE_MARKETS_PROGRAM_ID,
-    seeds: [seed("mint"), bytes(narrative)],
+    seeds: [seed("narrative"), bytes(narrativeMint)],
   });
 }
 

@@ -1,22 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
 import {
   findNarrative,
-  findNarrativeMint,
   findVault,
   formatStock,
   getCreateNarrativeInstruction,
+  getCreateNarrativeMintInstructions,
+  getNarrativeMintSize,
   usdToStock,
 } from "@nm/client";
-import {
-  findAssociatedTokenPda,
-  getCreateAssociatedTokenIdempotentInstruction,
-} from "@solana-program/token";
-import { createNoopSigner } from "@solana/kit";
+import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
+import { createNoopSigner, generateKeyPairSigner } from "@solana/kit";
 
 import {
   Button,
@@ -29,6 +27,7 @@ import {
 import { ConnectButton, useOwner } from "@/components/wallet";
 import {
   formatUsd,
+  rpc,
   SOLANA_CHAIN,
   STOCK_DECIMALS,
   STOCK_MINT,
@@ -44,7 +43,7 @@ const DURATIONS = [
   { label: "1 month", secs: 30 * 24 * 3600 },
 ];
 
-/** 10% is the tuning dial that decides whether people hold to expiry. */
+/** 10% is the dial that decides whether people hold to expiry. */
 const SELL_TAX_BPS = 1_000;
 const FEE_BPS = 100;
 
@@ -55,21 +54,31 @@ export default function Create() {
   const { signTransaction } = useSignTransaction();
   const owner = useOwner();
   const { price } = useStockPrice();
+  const fileInput = useRef<HTMLInputElement>(null);
 
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+  const [description, setDescription] = useState("");
+  const [website, setWebsite] = useState("");
+  const [twitter, setTwitter] = useState("");
+  const [telegram, setTelegram] = useState("");
   const [duration, setDuration] = useState(DURATIONS[1].secs);
+  const [advanced, setAdvanced] = useState(false);
+
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Curve defaults derived from the stock's price so the first token lands
-  // near $0.10 and reaches roughly $10 by a million tokens, whatever the
-  // stock happens to trade at.
+  // Curve defaults derived from the stock price, so the first token lands near
+  // $0.10 and reaches roughly $10 by a million, whatever the stock trades at.
   const basePrice = usdToStock(0.1, price, STOCK_DECIMALS);
   const slope =
     (usdToStock(10, price, STOCK_DECIMALS) - basePrice) / 1_000_000n;
 
   const valid =
+    image !== null &&
     name.trim().length > 0 &&
     name.length <= 32 &&
     symbol.trim().length > 0 &&
@@ -77,8 +86,16 @@ export default function Create() {
     basePrice > 0n &&
     slope > 0n;
 
+  const pickImage = (file: File | null) => {
+    setImage(file);
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  };
+
   const create = async () => {
-    if (!owner || !STOCK_MINT) return;
+    if (!owner || !STOCK_MINT || !image) return;
     const wallet = wallets.find((w) => w.address === owner) ?? wallets[0];
     if (!wallet) {
       setError("No Solana wallet connected.");
@@ -90,60 +107,110 @@ export default function Create() {
 
     try {
       const cleanName = name.trim();
-      // Read the stock's token program off its mint: tokenized stocks are
-      // Token-2022 while most mints are classic SPL, and the two derive
-      // different associated token addresses.
-      const stockTokenProgram = await fetchStockTokenProgram(STOCK_MINT);
+      const cleanSymbol = symbol.trim().toUpperCase();
 
-      const [narrative] = await findNarrative(STOCK_MINT, owner, cleanName);
-      const [narrativeMint] = await findNarrativeMint(narrative);
+      // 1. Image and JSON first — the mint needs the URI baked in.
+      setStep("Uploading image…");
+      const form = new FormData();
+      form.set("image", image);
+      form.set("name", cleanName);
+      form.set("symbol", cleanSymbol);
+      form.set("description", description.trim());
+      form.set("website", website.trim());
+      form.set("twitter", twitter.trim());
+      form.set("telegram", telegram.trim());
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: form,
+      });
+      const uploaded = (await response.json()) as {
+        uri?: string;
+        error?: string;
+      };
+      if (!response.ok || !uploaded.uri) {
+        throw new Error(uploaded.error ?? "Upload failed.");
+      }
+
+      // 2. The mint is a keypair, so the narrative address hangs off it.
+      setStep("Preparing the mint…");
+      const mint = await generateKeyPairSigner();
+      const [narrative] = await findNarrative(mint.address);
+      const stockTokenProgram = await fetchStockTokenProgram(STOCK_MINT);
       const [vault] = await findVault(
         narrative,
         STOCK_MINT,
         stockTokenProgram,
       );
 
+      // The metadata extension grows the mint after creation and takes no
+      // payer, so it has to be funded for its final size up front.
+      const { fundFor } = getNarrativeMintSize(
+        cleanName,
+        cleanSymbol,
+        uploaded.uri,
+      );
+      const lamports = await rpc
+        .getMinimumBalanceForRentExemption(BigInt(fundFor))
+        .send();
+
       const expiryTs = BigInt(Math.floor(Date.now() / 1000) + duration);
 
-      const instructions = [
-        // The program pins whatever vault it is handed rather than allocating
-        // one, so it must exist by the time create_narrative runs.
-        getCreateAssociatedTokenIdempotentInstruction({
-          payer: createNoopSigner(owner),
-          ata: vault,
-          owner: narrative,
-          mint: STOCK_MINT,
-          tokenProgram: stockTokenProgram,
-        }),
-        getCreateNarrativeInstruction({
-          creator: owner,
-          narrative,
-          stockMint: STOCK_MINT,
-          narrativeMint,
-          vault,
-          stockTokenProgram,
-          name: cleanName,
-          symbol: symbol.trim().toUpperCase(),
-          expiryTs,
-          basePrice,
-          slope,
-          feeBps: FEE_BPS,
-          sellTaxBps: SELL_TAX_BPS,
-        }),
-      ];
+      setStep("Confirm in your wallet…");
+      await signAndSend(
+        owner,
+        [
+          ...getCreateNarrativeMintInstructions({
+            payer: createNoopSigner(owner),
+            mint,
+            narrative,
+            name: cleanName,
+            symbol: cleanSymbol,
+            uri: uploaded.uri,
+            lamports,
+          }),
+          // The program pins whatever vault it is handed rather than
+          // allocating one, so it must exist by the time it runs.
+          getCreateAssociatedTokenIdempotentInstruction({
+            payer: createNoopSigner(owner),
+            ata: vault,
+            owner: narrative,
+            mint: STOCK_MINT,
+            tokenProgram: stockTokenProgram,
+          }),
+          getCreateNarrativeInstruction({
+            creator: owner,
+            narrative,
+            stockMint: STOCK_MINT,
+            narrativeMint: mint.address,
+            vault,
+            stockTokenProgram,
+            name: cleanName,
+            symbol: cleanSymbol,
+            expiryTs,
+            basePrice,
+            slope,
+            feeBps: FEE_BPS,
+            sellTaxBps: SELL_TAX_BPS,
+          }),
+        ],
+        async (transaction) => {
+          const { signedTransaction } = await signTransaction({
+            transaction,
+            wallet,
+            chain: SOLANA_CHAIN,
+          });
+          return signedTransaction;
+        },
+        // The mint signs its own CreateAccount; Privy adds the fee payer.
+        [mint],
+      );
 
-      await signAndSend(owner, instructions, async (transaction) => {
-        const { signedTransaction } = await signTransaction({
-          transaction,
-          wallet,
-          chain: SOLANA_CHAIN,
-        });
-        return signedTransaction;
-      });
       router.push(`/n/${narrative}`);
     } catch (cause) {
       setError(toUserMessage(cause));
       setBusy(false);
+      setStep(null);
     }
   };
 
@@ -167,6 +234,51 @@ export default function Create() {
         ) : null}
 
         <Card className="space-y-5">
+          {/* Image */}
+          <Field label="Image" hint="PNG, JPEG, WebP or GIF. Up to 4MB.">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-rule bg-fill transition-colors hover:border-ink-faint"
+              >
+                {preview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={preview}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs text-ink-faint">Add</span>
+                )}
+              </button>
+              <div className="min-w-0 text-xs text-ink-faint">
+                {image ? (
+                  <>
+                    <div className="truncate text-ink">{image.name}</div>
+                    <button
+                      type="button"
+                      onClick={() => pickImage(null)}
+                      className="mt-1 underline underline-offset-2"
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  "This is what shows in wallets and feeds."
+                )}
+              </div>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
+              />
+            </div>
+          </Field>
+
           <Field label="Name" hint="What is the story? Up to 32 characters.">
             <input
               value={name}
@@ -187,6 +299,16 @@ export default function Create() {
             />
           </Field>
 
+          <Field label="Description">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, 500))}
+              rows={3}
+              className={`${inputClass} resize-none`}
+              placeholder="Why this, and why now."
+            />
+          </Field>
+
           <Field
             label="Expires in"
             hint="Fixed at creation. Nobody can move it afterwards, including you."
@@ -195,6 +317,7 @@ export default function Create() {
               {DURATIONS.map((d) => (
                 <button
                   key={d.label}
+                  type="button"
                   onClick={() => setDuration(d.secs)}
                   className={`flex-1 rounded-full px-3 py-2.5 text-sm font-medium transition-colors ${
                     duration === d.secs
@@ -208,22 +331,60 @@ export default function Create() {
             </div>
           </Field>
 
-          <div className="space-y-1.5 border-t border-rule pt-4 text-xs text-ink-faint">
-            <div className="flex justify-between">
-              <span>Starting price</span>
-              <span className="numeric">
-                {formatStock(basePrice, STOCK_DECIMALS, 6)} {STOCK_SYMBOL} ≈{" "}
-                {formatUsd(0.1)}
-              </span>
+          {/* Links */}
+          <div className="space-y-3 border-t border-rule pt-5">
+            <Field label="Website">
+              <input
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                className={inputClass}
+                placeholder="https://"
+              />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="X">
+                <input
+                  value={twitter}
+                  onChange={(e) => setTwitter(e.target.value)}
+                  className={inputClass}
+                  placeholder="https://x.com/…"
+                />
+              </Field>
+              <Field label="Telegram">
+                <input
+                  value={telegram}
+                  onChange={(e) => setTelegram(e.target.value)}
+                  className={inputClass}
+                  placeholder="https://t.me/…"
+                />
+              </Field>
             </div>
-            <div className="flex justify-between">
-              <span>Your fee on every buy</span>
-              <span className="numeric">{FEE_BPS / 100}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Exit tax, paid to holders who stay</span>
-              <span className="numeric">{SELL_TAX_BPS / 100}%</span>
-            </div>
+          </div>
+
+          {/* Terms */}
+          <div className="border-t border-rule pt-4">
+            <button
+              type="button"
+              onClick={() => setAdvanced((v) => !v)}
+              className="label transition-colors hover:text-ink"
+            >
+              {advanced ? "Hide" : "Show"} curve settings
+            </button>
+
+            {advanced ? (
+              <div className="mt-3 space-y-1.5 text-xs text-ink-faint">
+                <Row label="Starting price">
+                  {formatStock(basePrice, STOCK_DECIMALS, 6)} {STOCK_SYMBOL} ≈{" "}
+                  {formatUsd(0.1)}
+                </Row>
+                <Row label="Backed by">{STOCK_SYMBOL}</Row>
+                <Row label="Decimals">0 — whole tokens only</Row>
+                <Row label="Your fee on every buy">{FEE_BPS / 100}%</Row>
+                <Row label="Exit tax, paid to holders who stay">
+                  {SELL_TAX_BPS / 100}%
+                </Row>
+              </div>
+            ) : null}
           </div>
         </Card>
 
@@ -237,12 +398,27 @@ export default function Create() {
             disabled={busy || !valid || !STOCK_MINT}
             className="w-full"
           >
-            {busy ? "Creating…" : "Launch narrative"}
+            {busy ? (step ?? "Creating…") : "Launch narrative"}
           </Button>
         )}
 
         {error ? <Notice kind="error">{error}</Notice> : null}
       </div>
     </Shell>
+  );
+}
+
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span>{label}</span>
+      <span className="numeric text-right">{children}</span>
+    </div>
   );
 }
