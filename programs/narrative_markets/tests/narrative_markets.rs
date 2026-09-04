@@ -18,6 +18,7 @@ const STOCK_FUNDING: u64 = 100_000_000_000; // 1,000 units of an 8-decimal mint
 struct Market {
     env: Env,
     narrative: Address,
+    narrative_mint: Address,
     vault: Address,
     creator_fee: Address,
 }
@@ -38,16 +39,17 @@ fn setup_with(env: Env) -> Market {
     let creator_key = creator.pubkey();
     let expiry = env.now() + DURATION;
 
-    // The vault must exist before creation: the program pins whatever token
-    // account it is given rather than allocating one, because Token-2022
-    // extensions determine the size.
-    let narrative = env.narrative(&creator_key, "ROBOTAXI");
+    // Both the mint and the vault exist before creation — the program verifies
+    // them rather than building them. The mint is a keypair whose authority has
+    // already been handed to its own narrative PDA.
+    let (narrative_mint, narrative) = env.create_narrative_mint();
     let vault = env.create_vault(&narrative);
 
     env.send(
         &[create_narrative_ix(
             &env,
             &creator_key,
+            &narrative_mint,
             &vault,
             "ROBOTAXI",
             "RBTX",
@@ -67,6 +69,7 @@ fn setup_with(env: Env) -> Market {
     Market {
         env,
         narrative,
+        narrative_mint,
         vault,
         creator_fee,
     }
@@ -83,7 +86,7 @@ struct Holder {
 fn holder(m: &mut Market) -> Holder {
     let wallet = m.env.new_wallet(10 * SOL);
     let key = wallet.pubkey();
-    let narrative_mint = m.env.narrative_mint(&m.narrative);
+    let narrative_mint = m.narrative_mint;
     let stock_mint = m.env.stock_mint;
 
     let tokens = m.env.create_token_account(&key, &narrative_mint);
@@ -100,6 +103,7 @@ fn holder(m: &mut Market) -> Holder {
 fn buy(m: &mut Market, h: &Holder, tokens: u64) {
     let ix = buy_ix(
         &m.env,
+        &m.narrative_mint,
         &h.wallet.pubkey(),
         &h.tokens,
         &h.stock,
@@ -124,7 +128,7 @@ fn vault_balance(m: &Market) -> u64 {
 fn expire(m: &mut Market) {
     m.env.advance_clock(DURATION + 1);
     let payer = m.env.creator.insecure_clone();
-    let ix = expire_ix(&m.env, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
     m.env.send(&[ix], &[&payer]).expect("expire");
 }
 
@@ -150,12 +154,13 @@ fn expiry_outside_the_permitted_window_is_rejected() {
     let key = creator.pubkey();
     let now = env.now();
 
-    let narrative = env.narrative(&key, "TOOSHORT");
+    let (narrative_mint, narrative) = env.create_narrative_mint();
     let vault = env.create_vault(&narrative);
 
     for bad in [now + 60, now + 91 * 24 * HOUR, now - HOUR] {
         let ix = create_narrative_ix(
-            &env, &key, &vault, "TOOSHORT", "TS", bad, BASE_PRICE, SLOPE, FEE_BPS, SELL_TAX_BPS,
+            &env, &key, &narrative_mint, &vault, "TOOSHORT", "TS", bad, BASE_PRICE, SLOPE,
+            FEE_BPS, SELL_TAX_BPS,
         );
         assert!(
             env.send(&[ix], &[&creator]).is_err(),
@@ -171,13 +176,14 @@ fn degenerate_curve_parameters_are_rejected() {
     let key = creator.pubkey();
     let expiry = env.now() + DURATION;
 
-    let narrative = env.narrative(&key, "BAD");
+    let (narrative_mint, narrative) = env.create_narrative_mint();
     let vault = env.create_vault(&narrative);
 
     // Zero base, zero slope, and an absurd fee each fail.
     for (base, slope, fee) in [(0, SLOPE, FEE_BPS), (BASE_PRICE, 0, FEE_BPS), (BASE_PRICE, SLOPE, 5_000)] {
         let ix = create_narrative_ix(
-            &env, &key, &vault, "BAD", "BAD", expiry, base, slope, fee, SELL_TAX_BPS,
+            &env, &key, &narrative_mint, &vault, "BAD", "BAD", expiry, base, slope, fee,
+            SELL_TAX_BPS,
         );
         assert!(env.send(&[ix], &[&creator]).is_err());
     }
@@ -226,6 +232,7 @@ fn buy_respects_the_slippage_limit() {
     let fee = apply_bps(cost, FEE_BPS).unwrap();
     let ix = buy_ix(
         &m.env,
+        &m.narrative_mint,
         &h.wallet.pubkey(),
         &h.tokens,
         &h.stock,
@@ -255,6 +262,7 @@ fn selling_walks_the_curve_back_down_and_the_tax_stays_behind() {
 
     let ix = sell_ix(
         &m.env,
+        &m.narrative_mint,
         &h.wallet.pubkey(),
         &h.tokens,
         &h.stock,
@@ -284,6 +292,7 @@ fn cannot_sell_more_than_the_supply() {
 
     let ix = sell_ix(
         &m.env,
+        &m.narrative_mint,
         &h.wallet.pubkey(),
         &h.tokens,
         &h.stock,
@@ -304,14 +313,14 @@ fn nobody_can_expire_early_including_the_creator() {
     buy(&mut m, &h, 100);
 
     let creator = m.env.creator.insecure_clone();
-    let ix = expire_ix(&m.env, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
     assert!(
         m.env.send(&[ix], &[&creator]).is_err(),
         "the creator must have no privilege to expire early",
     );
 
     let stranger = m.env.new_wallet(SOL);
-    let ix = expire_ix(&m.env, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
     assert!(m.env.send(&[ix], &[&stranger]).is_err());
 }
 
@@ -323,7 +332,7 @@ fn anyone_can_expire_once_the_date_passes() {
 
     m.env.advance_clock(DURATION + 1);
     let stranger = m.env.new_wallet(SOL);
-    let ix = expire_ix(&m.env, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
     m.env.send(&[ix], &[&stranger]).expect("permissionless");
 
     state(&m, |s| assert_eq!(s.status().unwrap(), Status::Expired));
@@ -339,6 +348,7 @@ fn trading_stops_at_expiry_even_before_expire_is_called() {
 
     let ix = buy_ix(
         &m.env,
+        &m.narrative_mint,
         &h.wallet.pubkey(),
         &h.tokens,
         &h.stock,
@@ -352,6 +362,7 @@ fn trading_stops_at_expiry_even_before_expire_is_called() {
 
     let ix = sell_ix(
         &m.env,
+        &m.narrative_mint,
         &h.wallet.pubkey(),
         &h.tokens,
         &h.stock,
@@ -369,7 +380,7 @@ fn expiry_freezes_the_numbers_and_revokes_the_mint_authority() {
     let h = holder(&mut m);
     buy(&mut m, &h, 1_000);
 
-    let mint = m.env.narrative_mint(&m.narrative);
+    let mint = m.narrative_mint;
     assert!(m.env.mint_has_authority(&mint));
 
     let vault_at_expiry = vault_balance(&m);
@@ -408,7 +419,7 @@ fn redeem_pays_pro_rata_and_the_last_holder_sweeps_the_dust() {
     assert_eq!(supply, 1_000);
 
     let a_stock_before = m.env.token_balance(&a.stock);
-    let ix = redeem_ix(&m.env, &a.wallet.pubkey(), &a.tokens, &a.stock, &m.narrative, &m.vault);
+    let ix = redeem_ix(&m.env, &m.narrative_mint, &a.wallet.pubkey(), &a.tokens, &a.stock, &m.narrative, &m.vault);
     m.env.send(&[ix], &[&a.wallet]).expect("A redeems");
 
     let a_payout = m.env.token_balance(&a.stock) - a_stock_before;
@@ -416,7 +427,7 @@ fn redeem_pays_pro_rata_and_the_last_holder_sweeps_the_dust() {
     assert_eq!(m.env.token_balance(&a.tokens), 0);
 
     let b_stock_before = m.env.token_balance(&b.stock);
-    let ix = redeem_ix(&m.env, &b.wallet.pubkey(), &b.tokens, &b.stock, &m.narrative, &m.vault);
+    let ix = redeem_ix(&m.env, &m.narrative_mint, &b.wallet.pubkey(), &b.tokens, &b.stock, &m.narrative, &m.vault);
     m.env.send(&[ix], &[&b.wallet]).expect("B redeems");
 
     let b_payout = m.env.token_balance(&b.stock) - b_stock_before;
@@ -436,10 +447,10 @@ fn double_redeem_fails() {
     buy(&mut m, &h, 500);
     expire(&mut m);
 
-    let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
+    let ix = redeem_ix(&m.env, &m.narrative_mint, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
     m.env.send(&[ix], &[&h.wallet]).expect("first redeem");
 
-    let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
+    let ix = redeem_ix(&m.env, &m.narrative_mint, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
     assert!(m.env.send(&[ix], &[&h.wallet]).is_err());
 }
 
@@ -449,7 +460,7 @@ fn cannot_redeem_before_expiry() {
     let h = holder(&mut m);
     buy(&mut m, &h, 100);
 
-    let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
+    let ix = redeem_ix(&m.env, &m.narrative_mint, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
     assert!(m.env.send(&[ix], &[&h.wallet]).is_err());
 }
 
@@ -473,6 +484,7 @@ fn buying_late_and_redeeming_is_always_a_loss() {
     let before = m.env.token_balance(&sniper.stock);
     let ix = redeem_ix(
         &m.env,
+        &m.narrative_mint,
         &sniper.wallet.pubkey(),
         &sniper.tokens,
         &sniper.stock,
@@ -510,6 +522,7 @@ fn an_early_buyer_redeems_more_stock_than_they_paid() {
     let before = m.env.token_balance(&early.stock);
     let ix = redeem_ix(
         &m.env,
+        &m.narrative_mint,
         &early.wallet.pubkey(),
         &early.tokens,
         &early.stock,
@@ -539,13 +552,14 @@ fn the_creator_cannot_drain_the_vault() {
     let creator_tokens = m.env.create_token_account(&creator_key, &stock_mint);
     let creator_narrative = m
         .env
-        .create_token_account(&creator_key, &m.env.narrative_mint(&m.narrative));
+        .create_token_account(&creator_key, &m.narrative_mint);
 
     let vault_before = vault_balance(&m);
 
     // Selling without holding any narrative tokens gets nothing.
     let ix = sell_ix(
         &m.env,
+        &m.narrative_mint,
         &creator_key,
         &creator_narrative,
         &creator_tokens,
@@ -560,6 +574,7 @@ fn the_creator_cannot_drain_the_vault() {
     expire(&mut m);
     let ix = redeem_ix(
         &m.env,
+        &m.narrative_mint,
         &creator_key,
         &creator_narrative,
         &creator_tokens,
@@ -588,6 +603,7 @@ fn the_full_lifecycle_works() {
     // One changes their mind and takes the tax hit.
     let ix = sell_ix(
         &m.env,
+        &m.narrative_mint,
         &b.wallet.pubkey(),
         &b.tokens,
         &b.stock,
@@ -604,7 +620,7 @@ fn the_full_lifecycle_works() {
 
     // Both convert into stock.
     for h in [&a, &b] {
-        let ix = redeem_ix(&m.env, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
+        let ix = redeem_ix(&m.env, &m.narrative_mint, &h.wallet.pubkey(), &h.tokens, &h.stock, &m.narrative, &m.vault);
         m.env.send(&[ix], &[&h.wallet]).expect("redeem");
         assert_eq!(m.env.token_balance(&h.tokens), 0);
     }
@@ -648,6 +664,7 @@ fn the_full_lifecycle_works_with_a_token_2022_stock() {
     let stock_before = m.env.token_balance(&b.stock);
     let ix = sell_ix(
         &m.env,
+        &m.narrative_mint,
         &b.wallet.pubkey(),
         &b.tokens,
         &b.stock,
@@ -665,6 +682,7 @@ fn the_full_lifecycle_works_with_a_token_2022_stock() {
         let before = m.env.token_balance(&h.stock);
         let ix = redeem_ix(
             &m.env,
+            &m.narrative_mint,
             &h.wallet.pubkey(),
             &h.tokens,
             &h.stock,
@@ -696,4 +714,71 @@ fn the_stock_token_program_is_pinned_at_creation() {
     state(&classic, |s| {
         assert_eq!(s.stock_token_program, TOKEN_PROGRAM);
     });
+}
+
+
+// --- the mint is verified, not built --------------------------------------
+
+/// `create_narrative` accepts a mint it did not create, so each precondition
+/// it checks needs a test — a miss here means supply can be minted beside the
+/// curve, or holders can be frozen out.
+#[test]
+fn a_mint_that_did_not_hand_over_authority_is_rejected() {
+    let mut env = Env::new();
+    let creator = env.creator.insecure_clone();
+    let key = creator.pubkey();
+    let expiry = env.now() + DURATION;
+
+    // Authority kept by the creator rather than handed to the narrative PDA,
+    // which would let them keep minting alongside the curve.
+    let (narrative_mint, narrative) =
+        env.create_narrative_mint_with(Some(key), None, None);
+    let vault = env.create_vault(&narrative);
+
+    let ix = create_narrative_ix(
+        &env, &key, &narrative_mint, &vault, "SNEAKY", "SNK", expiry, BASE_PRICE, SLOPE,
+        FEE_BPS, SELL_TAX_BPS,
+    );
+    assert!(
+        env.send(&[ix], &[&creator]).is_err(),
+        "a mint the creator can still mint from must be rejected",
+    );
+}
+
+#[test]
+fn a_mint_with_a_freeze_authority_is_rejected() {
+    let mut env = Env::new();
+    let creator = env.creator.insecure_clone();
+    let key = creator.pubkey();
+    let expiry = env.now() + DURATION;
+
+    // A freeze authority could strand every holder's tokens before expiry.
+    let (narrative_mint, narrative) =
+        env.create_narrative_mint_with(None, Some(key), None);
+    let vault = env.create_vault(&narrative);
+
+    let ix = create_narrative_ix(
+        &env, &key, &narrative_mint, &vault, "FREEZE", "FRZ", expiry, BASE_PRICE, SLOPE,
+        FEE_BPS, SELL_TAX_BPS,
+    );
+    assert!(env.send(&[ix], &[&creator]).is_err());
+}
+
+#[test]
+fn a_mint_with_the_wrong_decimals_is_rejected() {
+    let mut env = Env::new();
+    let creator = env.creator.insecure_clone();
+    let key = creator.pubkey();
+    let expiry = env.now() + DURATION;
+
+    // Decimals feed the curve directly; 6 would silently rescale every price.
+    let (narrative_mint, narrative) =
+        env.create_narrative_mint_with(None, None, Some(6));
+    let vault = env.create_vault(&narrative);
+
+    let ix = create_narrative_ix(
+        &env, &key, &narrative_mint, &vault, "DECIMALS", "DEC", expiry, BASE_PRICE, SLOPE,
+        FEE_BPS, SELL_TAX_BPS,
+    );
+    assert!(env.send(&[ix], &[&creator]).is_err());
 }

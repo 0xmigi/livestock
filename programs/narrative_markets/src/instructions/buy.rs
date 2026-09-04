@@ -60,7 +60,7 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         require_signer(buyer)?;
         require_writable(narrative)?;
         require_program_owned(narrative)?;
-        require_token_program(token_program)?;
+        require_narrative_token_program(token_program)?;
 
         let narrative_data = narrative.try_borrow()?;
         let state = Narrative::from_bytes(&narrative_data)?;
@@ -96,7 +96,7 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
 
         // The buyer's token account must be for this narrative's mint. Its
         // owner is unconstrained — buying into another wallet is harmless.
-        token_balance_for_mint(buyer_tokens, &TOKEN_PROGRAM, &state.narrative_mint)?;
+        token_balance_for_mint(buyer_tokens, &NARRATIVE_TOKEN_PROGRAM, &state.narrative_mint)?;
         // Payment must come from an account the buyer actually owns.
         token_balance_checked(
             buyer_stock,
@@ -114,10 +114,7 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
 
         let bump = state.bump;
         let decimals = state.stock_decimals;
-        let stock_key = state.stock_mint;
-        let creator = state.creator;
-        let name_buf = state.name;
-        let name_len = state.name_len as usize;
+        let mint_key = state.narrative_mint;
         let stock_program = state.stock_token_program;
 
         drop(narrative_data);
@@ -134,13 +131,14 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         let bump_seed = [bump];
         let seeds = [
             Seed::from(NARRATIVE_SEED),
-            Seed::from(stock_key.as_ref()),
-            Seed::from(creator.as_ref()),
-            Seed::from(&name_buf[..name_len]),
+            Seed::from(mint_key.as_ref()),
             Seed::from(&bump_seed),
         ];
         MintTo::new(narrative_mint, buyer_tokens, narrative, tokens_out)
-            .invoke_signed(&[Signer::from(&seeds[..])])?;
+            .invoke_signed_with_program(
+                &[Signer::from(&seeds[..])],
+                &NARRATIVE_TOKEN_PROGRAM,
+            )?;
     }
 
     let narrative = &mut accounts[NARRATIVE];

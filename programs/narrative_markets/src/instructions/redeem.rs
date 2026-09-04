@@ -40,7 +40,7 @@ pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
         require_signer(holder)?;
         require_writable(narrative)?;
         require_program_owned(narrative)?;
-        require_token_program(token_program)?;
+        require_narrative_token_program(token_program)?;
 
         let narrative_data = narrative.try_borrow()?;
         let state = Narrative::from_bytes(&narrative_data)?;
@@ -58,7 +58,7 @@ pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
         let tokens =
             token_balance_checked(
                 holder_tokens,
-                &TOKEN_PROGRAM,
+                &NARRATIVE_TOKEN_PROGRAM,
                 &state.narrative_mint,
                 holder.address(),
             )?;
@@ -90,23 +90,19 @@ pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
 
         let bump = state.bump;
         let decimals = state.stock_decimals;
-        let stock_key = state.stock_mint;
+        let mint_key = state.narrative_mint;
         let stock_program = state.stock_token_program;
-        let creator = state.creator;
-        let name_buf = state.name;
-        let name_len = state.name_len as usize;
 
         drop(narrative_data);
 
-        Burn::new(holder_tokens, narrative_mint, holder, tokens).invoke()?;
+        Burn::new(holder_tokens, narrative_mint, holder, tokens)
+            .invoke_with_program(&NARRATIVE_TOKEN_PROGRAM)?;
 
         if payout > 0 {
             let bump_seed = [bump];
             let seeds = [
                 Seed::from(NARRATIVE_SEED),
-                Seed::from(stock_key.as_ref()),
-                Seed::from(creator.as_ref()),
-                Seed::from(&name_buf[..name_len]),
+                Seed::from(mint_key.as_ref()),
                 Seed::from(&bump_seed),
             ];
             TransferChecked::new(vault, stock_mint, holder_stock, narrative, payout, decimals)

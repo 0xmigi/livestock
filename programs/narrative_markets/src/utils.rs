@@ -140,6 +140,25 @@ pub fn mint_decimals(
     account: &AccountView,
     token_program: &Address,
 ) -> Result<u8, ProgramError> {
+    Ok(read_mint(account, token_program)?.decimals)
+}
+
+/// The base fields of an SPL Token / Token-2022 mint.
+pub struct MintFields {
+    pub mint_authority: Option<Address>,
+    pub supply: u64,
+    pub decimals: u8,
+    pub freeze_authority: Option<Address>,
+}
+
+/// Reads a mint's base fields for either token program.
+///
+/// Token-2022 mints carry their extensions after the first 82 bytes, so the
+/// base layout is read the same way for both.
+pub fn read_mint(
+    account: &AccountView,
+    token_program: &Address,
+) -> Result<MintFields, ProgramError> {
     if !account.owned_by(token_program) {
         return Err(ProgramError::InvalidAccountOwner);
     }
@@ -148,7 +167,22 @@ pub fn mint_decimals(
     if data.len() < MINT_LEN || data[MINT_INITIALIZED_OFFSET] == 0 {
         return Err(MarketError::InvalidTokenAccount.into());
     }
-    Ok(data[MINT_DECIMALS_OFFSET])
+
+    let mut supply = [0u8; 8];
+    supply.copy_from_slice(&data[36..44]);
+
+    let option = |tag_at: usize, key_at: usize| {
+        let mut tag = [0u8; 4];
+        tag.copy_from_slice(&data[tag_at..tag_at + 4]);
+        (u32::from_le_bytes(tag) == 1).then(|| address_at(&data, key_at))
+    };
+
+    Ok(MintFields {
+        mint_authority: option(0, 4),
+        supply: u64::from_le_bytes(supply),
+        decimals: data[MINT_DECIMALS_OFFSET],
+        freeze_authority: option(46, 50),
+    })
 }
 
 pub fn require_signer(account: &AccountView) -> ProgramResult {
@@ -180,9 +214,10 @@ pub fn require_program_owned(account: &AccountView) -> ProgramResult {
     Ok(())
 }
 
-/// The classic SPL Token program, used for narrative mints.
-pub fn require_token_program(account: &AccountView) -> ProgramResult {
-    if account.address() != &crate::state::TOKEN_PROGRAM {
+/// The token program narrative mints live under — Token-2022, matching what
+/// launchpads issue today.
+pub fn require_narrative_token_program(account: &AccountView) -> ProgramResult {
+    if account.address() != &crate::state::NARRATIVE_TOKEN_PROGRAM {
         return Err(ProgramError::IncorrectProgramId);
     }
     Ok(())

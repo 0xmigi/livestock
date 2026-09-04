@@ -14,10 +14,11 @@ use {
     pinocchio::{error::ProgramError, Address},
 };
 
-/// PDA seed prefix for a narrative.
+/// PDA seed prefix for a narrative. Seeded on the mint, which is a plain
+/// keypair — so the narrative account is `["narrative", mint]` and nothing
+/// else. Seeding on a variable-length name meant dragging the name bytes
+/// through every signer-seed array in the program.
 pub const NARRATIVE_SEED: &[u8] = b"narrative";
-/// PDA seed prefix for a narrative's mint.
-pub const MINT_SEED: &[u8] = b"mint";
 /// SPL Token program.
 pub const TOKEN_PROGRAM: Address =
     Address::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -28,8 +29,21 @@ pub const TOKEN_2022_PROGRAM: Address =
 pub const MAX_NAME_LEN: usize = 32;
 pub const MAX_SYMBOL_LEN: usize = 10;
 
-/// Narrative mints carry 0 decimals: one token is one integer unit.
+/// Narrative mints carry **0 decimals**: one token is one integer unit.
+///
+/// Launchpad convention is 6, and this deviates on purpose. The curve is
+/// linear in stock base units, and over a 6-decimal supply the slope would be
+/// a fraction far below 1 — it floors to zero in integer arithmetic. Scaling
+/// it back up reintroduces a division whose flooring can make the marginal
+/// price equal the average, and "marginal strictly exceeds average" is the
+/// invariant that makes buying-and-redeeming always a loss. Whole units keep
+/// that exact.
 pub const NARRATIVE_DECIMALS: u8 = 0;
+
+/// Narrative mints are Token-2022, matching what launchpads now issue, and
+/// carry their name, symbol and URI in the mint's own `TokenMetadata`
+/// extension rather than a separate Metaplex account.
+pub const NARRATIVE_TOKEN_PROGRAM: Address = TOKEN_2022_PROGRAM;
 
 /// Shortest permitted life of a narrative.
 pub const MIN_DURATION_SECS: i64 = 60 * 60;
@@ -104,10 +118,9 @@ pub struct Narrative {
     pub name_len: u8,
     pub symbol_len: u8,
     pub bump: u8,
-    pub mint_bump: u8,
     /// Decimals of the stock mint, needed for `TransferChecked`.
     pub stock_decimals: u8,
-    pub _reserved: [u8; 12],
+    pub _reserved: [u8; 13],
 }
 
 /// Total account size including the 2-byte header.
@@ -182,7 +195,6 @@ impl Narrative {
         sell_tax_bps: u16,
         stock_decimals: u8,
         bump: u8,
-        mint_bump: u8,
     ) -> Result<(), MarketError> {
         if name.is_empty() || name.len() > MAX_NAME_LEN {
             return Err(MarketError::InvalidInstructionData);
@@ -217,8 +229,7 @@ impl Narrative {
         self.status = Status::Live as u8;
         self.stock_decimals = stock_decimals;
         self.bump = bump;
-        self.mint_bump = mint_bump;
-        self._reserved = [0u8; 12];
+        self._reserved = [0u8; 13];
         Ok(())
     }
 
@@ -301,15 +312,7 @@ impl Narrative {
 
 impl Narrative {
     /// Seeds this narrative's PDA signs with, minus the bump.
-    ///
-    /// Every instruction that moves tokens needs these, and getting them out
-    /// of one place keeps them from drifting apart.
-    pub fn signer_seeds(&self) -> [&[u8]; 4] {
-        [
-            NARRATIVE_SEED,
-            self.stock_mint.as_ref(),
-            self.creator.as_ref(),
-            self.name(),
-        ]
+    pub fn signer_seeds(&self) -> [&[u8]; 2] {
+        [NARRATIVE_SEED, self.narrative_mint.as_ref()]
     }
 }

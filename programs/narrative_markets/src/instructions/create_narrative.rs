@@ -5,13 +5,25 @@
 //! The expiry written here never becomes writable again — no instruction in
 //! this program can move it, the creator included.
 //!
-//! The **vault is supplied, not created**. It must be a token account for the
-//! stock mint owned by this narrative's PDA; the client creates it as an
-//! associated token account in the same transaction. That is deliberate:
-//! tokenized stocks are Token-2022 mints whose extensions determine the
-//! account size, and the ATA program computes that correctly. Allocating it by
-//! hand would mean reimplementing `GetAccountDataSize` and breaking the moment
-//! an issuer adds an extension.
+//! # The mint and the vault are supplied, not created
+//!
+//! Both arrive already built and this instruction only *verifies* them.
+//!
+//! The narrative mint is a Token-2022 mint carrying its name, symbol and URI
+//! in the mint's own `TokenMetadata` extension — the shape launchpads issue
+//! today. Building that on-chain would mean hand-rolling extension CPIs that
+//! have no Pinocchio bindings; the client has proper builders for all of it.
+//! Being a plain keypair rather than a PDA is also what lets a creator grind a
+//! vanity address, as every launchpad does.
+//!
+//! The vault is an associated token account for the stock. Tokenized stocks
+//! are Token-2022 mints whose extensions determine account size, and the ATA
+//! program computes that correctly.
+//!
+//! What the program will not take on trust: the mint must be Token-2022, have
+//! zero decimals, have **no supply yet**, carry **no freeze authority**, and
+//! have already handed its **mint authority to this narrative's PDA**. Without
+//! that last check anyone could keep minting beside the curve.
 
 use {
     crate::{error::MarketError, state::*, utils::*},
@@ -21,7 +33,6 @@ use {
         sysvars::{clock::Clock, Sysvar},
         AccountView, ProgramResult,
     },
-    pinocchio_token::{instructions::InitializeMint2, state::Mint},
 };
 
 const NARRATIVE: usize = 1;
@@ -30,11 +41,10 @@ const NARRATIVE: usize = 1;
 /// 0. `[signer, writable]` creator — also the rent payer
 /// 1. `[writable]` narrative PDA
 /// 2. `[]` stock mint
-/// 3. `[writable]` narrative mint PDA
+/// 3. `[]` narrative mint — Token-2022, pre-created, authority already handed over
 /// 4. `[]` vault token account — for the stock mint, owned by the narrative PDA
 /// 5. `[]` system program
-/// 6. `[]` token program — classic SPL, for the narrative mint
-/// 7. `[]` stock token program — classic SPL or Token-2022
+/// 6. `[]` stock token program — classic SPL or Token-2022
 pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
     // --- decode ----------------------------------------------------------
     let expiry_ts = read_i64(data, 0)?;
@@ -77,19 +87,17 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
         return Err(MarketError::BadExpiry.into());
     }
 
-    // --- validate and create accounts ------------------------------------
+    // --- verify the supplied accounts ------------------------------------
     let (
         creator_key,
         stock_key,
-        narrative_key,
         mint_key,
         vault_key,
         stock_program_key,
         stock_decimals,
         bump,
-        mint_bump,
     ) = {
-        let [creator, narrative, stock_mint, narrative_mint, vault, system_program, token_program, stock_token_program, ..] =
+        let [creator, narrative, stock_mint, narrative_mint, vault, system_program, stock_token_program, ..] =
             &*accounts
         else {
             return Err(ProgramError::NotEnoughAccountKeys);
@@ -98,32 +106,39 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
         require_signer(creator)?;
         require_writable(narrative)?;
         require_system_program(system_program)?;
-        require_token_program(token_program)?;
         require_stock_token_program(stock_token_program)?;
 
-        // The stock mint must be an initialized mint belonging to the token
-        // program the caller claims it does.
+        // The stock must be an initialized mint under the program it claims.
         let stock_decimals = mint_decimals(stock_mint, stock_token_program.address())?;
 
         let creator_key = *creator.address();
         let stock_key = *stock_mint.address();
+        let mint_key = *narrative_mint.address();
 
-        // Seeding on (stock, creator, name) means one creator gets one
-        // narrative per name per stock, while anyone else may reuse the name.
-        let (narrative_key, bump) = derive_pda(&[
-            NARRATIVE_SEED,
-            stock_key.as_ref(),
-            creator_key.as_ref(),
-            name,
-        ]);
+        // One narrative per mint, and the mint is a keypair the creator brings.
+        let (narrative_key, bump) = derive_pda(&[NARRATIVE_SEED, mint_key.as_ref()]);
         require_address(narrative, &narrative_key)?;
 
-        let (mint_key, mint_bump) = derive_pda(&[MINT_SEED, narrative_key.as_ref()]);
-        require_address(narrative_mint, &mint_key)?;
+        // --- the narrative mint must already be handed over ----------------
+        let mint = read_mint(narrative_mint, &NARRATIVE_TOKEN_PROGRAM)?;
+        if mint.decimals != NARRATIVE_DECIMALS {
+            return Err(MarketError::BadParameters.into());
+        }
+        // Nothing may exist before the curve mints it.
+        if mint.supply != 0 {
+            return Err(MarketError::BadParameters.into());
+        }
+        // A freeze authority would let someone strand holders' tokens.
+        if mint.freeze_authority.is_some() {
+            return Err(MarketError::BadParameters.into());
+        }
+        // Only this narrative may mint. Without this the curve means nothing.
+        if mint.mint_authority != Some(narrative_key) {
+            return Err(MarketError::BadParameters.into());
+        }
 
-        // The vault is whatever token account the caller supplies, so long as
-        // it is for this stock and owned by this narrative. Pinned here and
-        // enforced by address on every later instruction.
+        // The vault is pinned here and enforced by address on every later
+        // instruction.
         token_balance_checked(
             vault,
             stock_token_program.address(),
@@ -131,7 +146,7 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
             &narrative_key,
         )?;
 
-        // --- narrative account -------------------------------------------
+        // --- the one account this program does create ----------------------
         let bump_seed = [bump];
         create_pda_account(
             creator,
@@ -140,52 +155,21 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
             &crate::ID,
             &[
                 Seed::from(NARRATIVE_SEED),
-                Seed::from(stock_key.as_ref()),
-                Seed::from(creator_key.as_ref()),
-                Seed::from(name),
+                Seed::from(mint_key.as_ref()),
                 Seed::from(&bump_seed),
             ],
         )?;
 
-        // --- narrative mint, authority = the narrative PDA ----------------
-        // Deliberately a classic SPL mint: this program creates it, so it does
-        // not inherit the stock's Token-2022 requirements, and ATAs for it work
-        // everywhere without extension handling.
-        let mint_bump_seed = [mint_bump];
-        create_pda_account(
-            creator,
-            narrative_mint,
-            Mint::LEN,
-            &TOKEN_PROGRAM,
-            &[
-                Seed::from(MINT_SEED),
-                Seed::from(narrative_key.as_ref()),
-                Seed::from(&mint_bump_seed),
-            ],
-        )?;
-        InitializeMint2::new(
-            narrative_mint,
-            NARRATIVE_DECIMALS,
-            &narrative_key,
-            // No freeze authority. Expiry revokes the mint authority instead,
-            // which is what actually stops supply growing.
-            None,
-        )
-        .invoke()?;
-
         (
             creator_key,
             stock_key,
-            narrative_key,
             mint_key,
             *vault.address(),
             *stock_token_program.address(),
             stock_decimals,
             bump,
-            mint_bump,
         )
     };
-    let _ = narrative_key;
 
     // --- write state -----------------------------------------------------
     let narrative = &mut accounts[NARRATIVE];
@@ -206,7 +190,6 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
         sell_tax_bps,
         stock_decimals,
         bump,
-        mint_bump,
     )?;
 
     Ok(())

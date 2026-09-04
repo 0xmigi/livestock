@@ -35,7 +35,7 @@ pub fn expire(accounts: &mut [AccountView]) -> ProgramResult {
 
         require_writable(narrative)?;
         require_program_owned(narrative)?;
-        require_token_program(token_program)?;
+        require_narrative_token_program(token_program)?;
 
         let narrative_data = narrative.try_borrow()?;
         let state = Narrative::from_bytes(&narrative_data)?;
@@ -60,23 +60,21 @@ pub fn expire(accounts: &mut [AccountView]) -> ProgramResult {
             )?;
 
         let bump = state.bump;
-        let stock_mint = state.stock_mint;
-        let creator = state.creator;
-        let name_buf = state.name;
-        let name_len = state.name_len as usize;
+        let mint_key = state.narrative_mint;
 
         drop(narrative_data);
 
         let bump_seed = [bump];
         let seeds = [
             Seed::from(NARRATIVE_SEED),
-            Seed::from(stock_mint.as_ref()),
-            Seed::from(creator.as_ref()),
-            Seed::from(&name_buf[..name_len]),
+            Seed::from(mint_key.as_ref()),
             Seed::from(&bump_seed),
         ];
         SetAuthority::new(narrative_mint, narrative, AuthorityType::MintTokens, None)
-            .invoke_signed(&[Signer::from(&seeds[..])])?;
+            .invoke_signed_with_program(
+                &[Signer::from(&seeds[..])],
+                &NARRATIVE_TOKEN_PROGRAM,
+            )?;
 
         vault_balance
     };

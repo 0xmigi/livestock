@@ -9,7 +9,7 @@
 
 use {
     litesvm::{types::TransactionResult, LiteSVM},
-    narrative_markets::state::{MINT_SEED, NARRATIVE_SEED},
+    narrative_markets::state::{NARRATIVE_SEED, NARRATIVE_TOKEN_PROGRAM},
     solana_address::Address,
     solana_clock::Clock,
     solana_instruction::{account_meta::AccountMeta, Instruction},
@@ -81,21 +81,64 @@ impl Env {
 
     // --- addresses --------------------------------------------------------
 
-    pub fn narrative(&self, creator: &Address, name: &str) -> Address {
-        Address::find_program_address(
-            &[
-                NARRATIVE_SEED,
-                self.stock_mint.as_ref(),
-                creator.as_ref(),
-                name.as_bytes(),
-            ],
-            &narrative_markets::ID,
-        )
-        .0
+    /// The narrative PDA for a mint — one fixed seed, since the mint is a
+    /// plain keypair rather than a derived address.
+    pub fn narrative_for(mint: &Address) -> Address {
+        Address::find_program_address(&[NARRATIVE_SEED, mint.as_ref()], &narrative_markets::ID).0
     }
 
-    pub fn narrative_mint(&self, narrative: &Address) -> Address {
-        Address::find_program_address(&[MINT_SEED, narrative.as_ref()], &narrative_markets::ID).0
+    /// Creates a Token-2022 narrative mint with zero decimals whose mint
+    /// authority is already its own narrative PDA, and no freeze authority —
+    /// the shape `create_narrative` insists on.
+    ///
+    /// The real client also initialises the metadata extensions here; the
+    /// program does not inspect those, so tests use a bare mint.
+    pub fn create_narrative_mint(&mut self) -> (Address, Address) {
+        self.create_narrative_mint_with(None, None, None)
+    }
+
+    /// The same, but lets a test hand over a deliberately wrong mint:
+    /// a different mint authority, a freeze authority, or pre-existing supply.
+    pub fn create_narrative_mint_with(
+        &mut self,
+        authority_override: Option<Address>,
+        freeze_authority: Option<Address>,
+        decimals_override: Option<u8>,
+    ) -> (Address, Address) {
+        let mint = Keypair::new();
+        let narrative = Self::narrative_for(&mint.pubkey());
+        let authority = authority_override.unwrap_or(narrative);
+        let decimals = decimals_override.unwrap_or(0);
+
+        let rent = self.svm.minimum_balance_for_rent_exemption(MINT_LEN);
+        let creator_key = self.creator.pubkey();
+
+        let create = solana_system_interface::instruction::create_account(
+            &creator_key,
+            &mint.pubkey(),
+            rent,
+            MINT_LEN as u64,
+            &NARRATIVE_TOKEN_PROGRAM,
+        );
+        let mut data = vec![20u8, decimals]; // InitializeMint2
+        data.extend_from_slice(authority.as_ref());
+        match freeze_authority {
+            Some(f) => {
+                data.push(1);
+                data.extend_from_slice(f.as_ref());
+            }
+            None => data.push(0),
+        }
+        let init = Instruction {
+            program_id: NARRATIVE_TOKEN_PROGRAM,
+            accounts: vec![AccountMeta::new(mint.pubkey(), false)],
+            data,
+        };
+
+        let creator = self.creator.insecure_clone();
+        self.send(&[create, init], &[&creator, &mint])
+            .expect("create narrative mint");
+        (mint.pubkey(), narrative)
     }
 
     /// The vault is supplied at creation rather than derived, so tests track
@@ -165,10 +208,12 @@ impl Env {
     }
 
     pub fn create_token_account(&mut self, owner: &Address, mint: &Address) -> Address {
+        // Stock accounts follow the stock's program; narrative accounts are
+        // always Token-2022.
         let program = if *mint == self.stock_mint {
             self.stock_program
         } else {
-            TOKEN_PROGRAM
+            NARRATIVE_TOKEN_PROGRAM
         };
         self.create_token_account_with(owner, mint, program)
     }
@@ -243,6 +288,7 @@ impl Env {
 pub fn create_narrative_ix(
     env: &Env,
     creator: &Address,
+    narrative_mint: &Address,
     vault: &Address,
     name: &str,
     symbol: &str,
@@ -252,7 +298,7 @@ pub fn create_narrative_ix(
     fee_bps: u16,
     sell_tax_bps: u16,
 ) -> Instruction {
-    let narrative = env.narrative(creator, name);
+    let narrative = Env::narrative_for(narrative_mint);
     let mut data = vec![0u8];
     data.extend_from_slice(&expiry_ts.to_le_bytes());
     data.extend_from_slice(&base_price.to_le_bytes());
@@ -269,10 +315,9 @@ pub fn create_narrative_ix(
             AccountMeta::new(*creator, true),
             AccountMeta::new(narrative, false),
             AccountMeta::new_readonly(env.stock_mint, false),
-            AccountMeta::new(env.narrative_mint(&narrative), false),
+            AccountMeta::new_readonly(*narrative_mint, false),
             AccountMeta::new_readonly(*vault, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
             AccountMeta::new_readonly(env.stock_program, false),
         ],
         data,
@@ -282,6 +327,7 @@ pub fn create_narrative_ix(
 #[allow(clippy::too_many_arguments)]
 pub fn buy_ix(
     env: &Env,
+    narrative_mint: &Address,
     buyer: &Address,
     buyer_tokens: &Address,
     buyer_stock: &Address,
@@ -300,13 +346,13 @@ pub fn buy_ix(
         accounts: vec![
             AccountMeta::new_readonly(*buyer, true),
             AccountMeta::new(*narrative, false),
-            AccountMeta::new(env.narrative_mint(narrative), false),
+            AccountMeta::new(*narrative_mint, false),
             AccountMeta::new(*buyer_tokens, false),
             AccountMeta::new(*buyer_stock, false),
             AccountMeta::new(*vault, false),
             AccountMeta::new(*creator_fee, false),
             AccountMeta::new_readonly(env.stock_mint, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
             AccountMeta::new_readonly(env.stock_program, false),
         ],
         data,
@@ -316,6 +362,7 @@ pub fn buy_ix(
 #[allow(clippy::too_many_arguments)]
 pub fn sell_ix(
     env: &Env,
+    narrative_mint: &Address,
     seller: &Address,
     seller_tokens: &Address,
     seller_stock: &Address,
@@ -333,26 +380,31 @@ pub fn sell_ix(
         accounts: vec![
             AccountMeta::new_readonly(*seller, true),
             AccountMeta::new(*narrative, false),
-            AccountMeta::new(env.narrative_mint(narrative), false),
+            AccountMeta::new(*narrative_mint, false),
             AccountMeta::new(*seller_tokens, false),
             AccountMeta::new(*seller_stock, false),
             AccountMeta::new(*vault, false),
             AccountMeta::new_readonly(env.stock_mint, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
             AccountMeta::new_readonly(env.stock_program, false),
         ],
         data,
     }
 }
 
-pub fn expire_ix(env: &Env, narrative: &Address, vault: &Address) -> Instruction {
+pub fn expire_ix(
+    env: &Env,
+    narrative_mint: &Address,
+    narrative: &Address,
+    vault: &Address,
+) -> Instruction {
     Instruction {
         program_id: narrative_markets::ID,
         accounts: vec![
             AccountMeta::new(*narrative, false),
-            AccountMeta::new(env.narrative_mint(narrative), false),
+            AccountMeta::new(*narrative_mint, false),
             AccountMeta::new_readonly(*vault, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
         ],
         data: vec![3u8],
     }
@@ -360,6 +412,7 @@ pub fn expire_ix(env: &Env, narrative: &Address, vault: &Address) -> Instruction
 
 pub fn redeem_ix(
     env: &Env,
+    narrative_mint: &Address,
     holder: &Address,
     holder_tokens: &Address,
     holder_stock: &Address,
@@ -371,12 +424,12 @@ pub fn redeem_ix(
         accounts: vec![
             AccountMeta::new_readonly(*holder, true),
             AccountMeta::new(*narrative, false),
-            AccountMeta::new(env.narrative_mint(narrative), false),
+            AccountMeta::new(*narrative_mint, false),
             AccountMeta::new(*holder_tokens, false),
             AccountMeta::new(*holder_stock, false),
             AccountMeta::new(*vault, false),
             AccountMeta::new_readonly(env.stock_mint, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
             AccountMeta::new_readonly(env.stock_program, false),
         ],
         data: vec![4u8],
