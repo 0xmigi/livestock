@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    // Source files import each other with explicit `.ts` extensions; this
+    // rewrites them to `.js` on emit so the built package is valid ESM.
+    // Consuming the package as TypeScript source does not resolve under
+    // Turbopack — it must be built.
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src/**/*.ts"]
+}

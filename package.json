@@ -1,0 +1,15 @@
+{
+  "name": "narrative-markets",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Narrative tokens that expire into tokenized stock",
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "build:client": "pnpm --filter @nm/client run build",
+    "build:program": "cargo build-sbf",
+    "test:program": "cargo test -p narrative_markets",
+    "dev": "pnpm run build:client && pnpm --filter @nm/app dev",
+    "build": "pnpm run build:client && pnpm --filter @nm/app build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

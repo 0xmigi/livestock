@@ -1,0 +1,21 @@
+{
+  "name": "@nm/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "tsx src/seed.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nm/client": "workspace:*",
+    "@solana-program/system": "^0.14.1",
+    "@solana-program/token": "^0.16.1",
+    "@solana/kit": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.7",
+    "typescript": "^5.9.3"
+  }
+}

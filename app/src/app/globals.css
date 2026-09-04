@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  /* Warm off-white ground with near-black type — the page should read as
+     paper, not as a dashboard. */
+  --color-paper: #fafaf9;
+  --color-ink: #18181b;
+  --color-ink-soft: #52525b;
+  --color-ink-faint: #a1a1aa;
+  --color-rule: #e7e5e4;
+  --color-fill: #f4f4f5;
+
+  --color-live: #22c55e;
+  --color-closing: #f59e0b;
+  --color-settled: #a1a1aa;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter,
+    sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Anything that ticks or updates gets tabular figures so it stops jittering. */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* The small uppercase label that sits above every hero number. */
+.label {
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
