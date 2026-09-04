@@ -9,61 +9,88 @@
  */
 
 import { useEffect, useState } from "react";
+import type { Address } from "@solana/kit";
 
-import { FALLBACK_STOCK_PRICE_USD, STOCK_MINT } from "./config";
+import { DEFAULT_STOCK, STOCKS, stockFor } from "./config";
 
 const JUPITER_PRICE_API = "https://lite-api.jup.ag/price/v3";
 
-async function fetchStockPrice(): Promise<number | null> {
-  if (!STOCK_MINT) return null;
+type PriceMap = Record<string, number>;
+
+async function fetchPrices(mints: Address[]): Promise<PriceMap> {
+  if (mints.length === 0) return {};
 
   try {
-    const response = await fetch(`${JUPITER_PRICE_API}?ids=${STOCK_MINT}`);
-    if (!response.ok) return null;
+    const response = await fetch(
+      `${JUPITER_PRICE_API}?ids=${mints.join(",")}`,
+    );
+    if (!response.ok) return {};
 
     const body: unknown = await response.json();
-    if (typeof body !== "object" || body === null) return null;
+    if (typeof body !== "object" || body === null) return {};
 
-    const entry = (body as Record<string, unknown>)[STOCK_MINT];
-    if (typeof entry !== "object" || entry === null) return null;
-
-    const price = (entry as Record<string, unknown>).usdPrice;
-    return typeof price === "number" && price > 0 ? price : null;
+    const out: PriceMap = {};
+    for (const mint of mints) {
+      const entry = (body as Record<string, unknown>)[mint];
+      if (typeof entry !== "object" || entry === null) continue;
+      const price = (entry as Record<string, unknown>).usdPrice;
+      if (typeof price === "number" && price > 0) out[mint] = price;
+    }
+    return out;
   } catch {
     // A price feed outage should never take the page down.
-    return null;
+    return {};
   }
 }
 
+// Shared across hooks so every component sees the same numbers.
+let cache: PriceMap = {};
+const listeners = new Set<() => void>();
+let started = false;
+
+function start() {
+  if (started || typeof window === "undefined") return;
+  started = true;
+  const load = async () => {
+    const next = await fetchPrices(STOCKS.map((s) => s.mint));
+    if (Object.keys(next).length > 0) {
+      cache = { ...cache, ...next };
+      for (const l of listeners) l();
+    }
+  };
+  void load();
+  setInterval(() => void load(), 60_000);
+}
+
+/** Live USD prices for every registered stock, keyed by mint. */
+export function useStockPrices(): PriceMap {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    start();
+    const listener = () => tick((n) => n + 1);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+  return cache;
+}
+
 /**
- * The stock's USD price, falling back to the configured constant.
+ * One stock's USD price, falling back to its configured constant.
  *
  * `isLive` says whether the number came from the feed, so the UI can be honest
  * about a fallback rather than quietly showing a made-up figure.
  */
-export function useStockPrice(): { price: number; isLive: boolean } {
-  const [price, setPrice] = useState(FALLBACK_STOCK_PRICE_USD);
-  const [isLive, setIsLive] = useState(false);
+export function useStockPrice(mint?: Address | null): {
+  price: number;
+  isLive: boolean;
+} {
+  const prices = useStockPrices();
+  const target = mint ?? DEFAULT_STOCK?.mint ?? null;
+  if (!target) return { price: 0, isLive: false };
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      const next = await fetchStockPrice();
-      if (cancelled) return;
-      if (next !== null) {
-        setPrice(next);
-        setIsLive(true);
-      }
-    };
-
-    void load();
-    const timer = setInterval(() => void load(), 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
-  return { price, isLive };
+  const live = prices[target];
+  if (live !== undefined) return { price: live, isLive: true };
+  return { price: stockFor(target).fallbackPriceUsd, isLive: false };
 }

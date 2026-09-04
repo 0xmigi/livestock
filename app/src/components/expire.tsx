@@ -4,7 +4,7 @@
  * Settling an expired narrative.
  *
  * `expire` is permissionless once the date has passed and takes no signer of
- * its own — anyone can settle any narrative. Whoever clicks this pays the fee
+ * its own: anyone can settle any narrative. Whoever clicks this pays the fee
  * and unlocks redemption for every holder.
  */
 
@@ -71,7 +71,7 @@ export function ExpireButton({
 
   return (
     <div className="space-y-3">
-      <Button onClick={settle} disabled={busy} className="w-full">
+      <Button onClick={settle} disabled={busy} className="w-full" size="lg">
         {busy ? "Settling…" : "Settle this narrative"}
       </Button>
       {error ? <Notice kind="error">{error}</Notice> : null}

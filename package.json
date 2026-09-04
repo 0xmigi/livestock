@@ -1,8 +1,8 @@
 {
-  "name": "narrative-markets",
+  "name": "livestock",
   "private": true,
   "version": "0.1.0",
-  "description": "Narrative tokens that expire into tokenized stock",
+  "description": "Livestock — narrative tokens that expire into tokenized stock",
   "packageManager": "pnpm@11.10.0",
   "scripts": {
     "build:client": "pnpm --filter @nm/client run build",

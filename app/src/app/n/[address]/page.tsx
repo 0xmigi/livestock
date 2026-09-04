@@ -2,10 +2,9 @@
 
 import { use } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+import { ExternalLink } from "lucide-react";
 import {
   formatStock,
-  isPastExpiry,
-  isTradable,
   redemptionPerToken,
   secondsRemaining,
   spotPrice,
@@ -14,12 +13,32 @@ import {
 import { address } from "@solana/kit";
 
 import { BuyPanel, RedeemPanel } from "@/components/actions";
-import { Button, Card, Notice, Shell, Stat, StatusDot } from "@/components/ui";
-import { ConnectButton, useOwner } from "@/components/wallet";
-import { formatUsd, STOCK_DECIMALS, STOCK_SYMBOL } from "@/lib/config";
-import { formatCountdown, useNarrative, useNow } from "@/lib/narratives";
-import { useStockPrice } from "@/lib/price";
 import { ExpireButton } from "@/components/expire";
+import { Shell } from "@/components/shell";
+import {
+  Button,
+  Card,
+  Hero,
+  Notice,
+  phaseOf,
+  Stat,
+  StatusDot,
+} from "@/components/ui";
+import { useOwner } from "@/components/wallet";
+import {
+  explorerUrl,
+  formatUsd,
+  formatUsdAuto,
+  shortAddress,
+} from "@/lib/config";
+import {
+  formatCountdown,
+  formatDate,
+  useNarrative,
+  useNow,
+} from "@/lib/narratives";
+import { useStockPrice } from "@/lib/price";
+import { Thumb } from "@/components/thumb";
 
 export default function NarrativePage({
   params,
@@ -30,7 +49,6 @@ export default function NarrativePage({
   const { authenticated, login, ready } = usePrivy();
   const owner = useOwner();
   const now = useNow();
-  const { price } = useStockPrice();
 
   let parsed = null;
   try {
@@ -39,14 +57,13 @@ export default function NarrativePage({
     // handled below
   }
 
-  const { narrative, position, error, loading, refresh } = useNarrative(
-    parsed,
-    owner,
-  );
+  const { narrative, position, creatorHoldings, error, loading, refresh } =
+    useNarrative(parsed, owner);
+  const { price, isLive: priceIsLive } = useStockPrice(narrative?.stockMint);
 
   if (!parsed) {
     return (
-      <Shell action={<ConnectButton />}>
+      <Shell width="narrow">
         <Notice kind="error">That is not a valid address.</Notice>
       </Shell>
     );
@@ -54,23 +71,28 @@ export default function NarrativePage({
 
   if (loading && !narrative) {
     return (
-      <Shell action={<ConnectButton />}>
-        <p className="text-sm text-ink-faint">Loading…</p>
+      <Shell width="narrow">
+        <div className="space-y-4" aria-hidden>
+          <div className="mx-auto h-16 w-16 animate-pulse rounded-2xl bg-neutral-100" />
+          <div className="mx-auto h-8 w-48 animate-pulse rounded-lg bg-neutral-100" />
+          <div className="mx-auto h-14 w-40 animate-pulse rounded-lg bg-neutral-50" />
+        </div>
       </Shell>
     );
   }
 
   if (!narrative) {
     return (
-      <Shell action={<ConnectButton />}>
+      <Shell width="narrow">
         <Notice kind="error">{error ?? "Narrative not found."}</Notice>
       </Shell>
     );
   }
 
+  const stock = narrative.stock;
   const remaining = secondsRemaining(narrative, now);
-  const pastExpiry = isPastExpiry(narrative, now);
-  const tradable = isTradable(narrative, now);
+  const phase = phaseOf(narrative.status, remaining);
+  const tradable = phase === "live" || phase === "closing";
   const perToken = redemptionPerToken(narrative);
 
   // Before expiry the vault is live; after, the frozen snapshot is what pays.
@@ -78,70 +100,132 @@ export default function NarrativePage({
     narrative.status === Status.Live
       ? narrative.vaultBalance
       : narrative.finalVault;
-  const backingUsd = (Number(backing) / 10 ** STOCK_DECIMALS) * price;
+  const supply =
+    narrative.status === Status.Live
+      ? narrative.supply
+      : narrative.finalSupply;
+  const toUsd = (units: bigint) =>
+    (Number(units) / 10 ** stock.decimals) * price;
+
+  const nextPrice = spotPrice(narrative.supply, narrative);
+  const held = position?.tokens ?? 0n;
 
   return (
-    <Shell action={<ConnectButton />}>
-      <div className="space-y-5">
-        {/* Hero */}
-        <div>
-          <div className="flex items-center gap-3">
-            <StatusDot status={narrative.status} expired={pastExpiry} />
-            <span className="text-xs text-ink-faint">
-              expires into {STOCK_SYMBOL}
-            </span>
-          </div>
-          <h1 className="mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">
+    <Shell width="narrow">
+      <div className="space-y-8">
+        {/* Identity */}
+        <div className="flex flex-col items-center pt-2 text-center">
+          <Thumb
+            src={narrative.meta?.image}
+            name={narrative.name}
+            size={72}
+            className=""
+          />
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
             {narrative.name}
           </h1>
-          <p className="mt-1 text-sm text-ink-faint">
-            {narrative.symbol}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-neutral-400">
+            <span className="numeric">${narrative.symbol}</span>
+            <span aria-hidden>·</span>
+            <span>expires into {stock.symbol}</span>
+            <span aria-hidden>·</span>
+            <StatusDot phase={phase} pulse />
+          </div>
         </div>
 
-        {/* The two numbers that are the product, plus the clock */}
-        <Card>
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3">
-            <Stat
-              label={tradable ? "Expires in" : "Trading"}
-              value={tradable ? formatCountdown(remaining) : "Closed"}
+        {/* The one hero number */}
+        <div className="py-2 sm:py-4">
+          {tradable ? (
+            <Hero
+              label="Time remaining"
+              value={formatCountdown(remaining)}
+              sub={`Converts to ${stock.symbol} on ${formatDate(narrative.expiryTs)}`}
             />
+          ) : phase === "settling" ? (
+            <Hero
+              label="Trading closed"
+              value="Settling"
+              sub={`Expired ${formatDate(narrative.expiryTs)} · claims open once settled`}
+            />
+          ) : phase === "redeemable" ? (
+            <Hero
+              label="Each token converts to"
+              value={
+                <>
+                  {formatStock(perToken, stock.decimals, 6)}
+                  <span className="ml-2 text-2xl font-semibold text-neutral-400">
+                    {stock.symbol}
+                  </span>
+                </>
+              }
+              sub={`≈ ${formatUsdAuto(toUsd(perToken))} · claims never expire`}
+            />
+          ) : (
+            <Hero
+              label="Fully settled"
+              value="Done"
+              muted
+              sub={`Every token was converted into ${stock.symbol}`}
+            />
+          )}
+        </div>
+
+        {/* The two numbers that are the product */}
+        <Card className="!p-5">
+          <div className="grid grid-cols-2 gap-6">
             <Stat
               label="Vault"
-              value={formatStock(backing, STOCK_DECIMALS, 2)}
-              sub={`≈ ${formatUsd(backingUsd)}`}
+              value={
+                <>
+                  {formatStock(backing, stock.decimals, 2)}
+                  <span className="ml-1.5 text-sm font-normal text-neutral-400">
+                    {stock.symbol}
+                  </span>
+                </>
+              }
+              sub={
+                price > 0
+                  ? `≈ ${formatUsd(toUsd(backing))}${priceIsLive ? "" : " (est.)"}`
+                  : undefined
+              }
             />
             <Stat
               label="Supply"
-              value={(narrative.status === Status.Live
-                ? narrative.supply
-                : narrative.finalSupply
-              ).toLocaleString()}
+              value={supply.toLocaleString()}
               sub={
-                perToken > 0n
-                  ? `${formatStock(perToken, STOCK_DECIMALS, 6)} each`
-                  : `${formatStock(spotPrice(narrative.supply, narrative), STOCK_DECIMALS, 6)} next`
+                tradable
+                  ? `next token ${formatStock(nextPrice, stock.decimals, 6)} · ≈ ${formatUsdAuto(toUsd(nextPrice))}`
+                  : perToken > 0n
+                    ? `${formatStock(perToken, stock.decimals, 6)} each`
+                    : undefined
               }
             />
           </div>
         </Card>
 
         {/* Action */}
-        <Card>
+        <Card className="!p-5">
           {!ready ? (
-            <p className="text-sm text-ink-faint">…</p>
+            <div className="h-24 animate-pulse rounded-lg bg-neutral-50" />
           ) : !authenticated || !owner ? (
-            <div className="py-6 text-center">
-              <p className="text-sm text-ink-soft">
-                Connect a wallet to take part.
+            <div className="py-4 text-center">
+              <p className="text-sm text-neutral-600">
+                {tradable
+                  ? `Log in to buy $${narrative.symbol}.`
+                  : "Log in to see your position."}
               </p>
-              <Button onClick={login} className="mt-4">
-                Connect
+              <Button
+                onClick={login}
+                className="mt-4 w-full !py-3.5 !text-base"
+                size="lg"
+              >
+                Log in or sign up
               </Button>
             </div>
           ) : narrative.status === Status.Settled ? (
             <Notice>
-              This narrative is fully settled. Every claim has been converted.
+              This narrative is fully settled. Every claim has been converted
+              into {stock.symbol}.
             </Notice>
           ) : narrative.status === Status.Expired ? (
             <RedeemPanel
@@ -151,11 +235,11 @@ export default function NarrativePage({
               stockPrice={price}
               onDone={refresh}
             />
-          ) : pastExpiry ? (
+          ) : phase === "settling" ? (
             <div className="space-y-4">
               <Notice>
                 The date has passed and trading has stopped. Someone needs to
-                settle it before claims open — anyone can, including you.
+                settle it before claims open. Anyone can, including you.
               </Notice>
               <ExpireButton narrative={narrative} owner={owner} onDone={refresh} />
             </div>
@@ -171,29 +255,151 @@ export default function NarrativePage({
         </Card>
 
         {/* Position */}
-        {position && position.tokens > 0n ? (
+        {owner && held > 0n && narrative.status !== Status.Expired ? (
           <Card>
             <div className="grid grid-cols-2 gap-6">
               <Stat
                 label="You hold"
-                value={position.tokens.toLocaleString()}
-                sub={narrative.symbol}
+                value={held.toLocaleString()}
+                sub={`$${narrative.symbol}`}
               />
               <Stat
-                label={`Your ${STOCK_SYMBOL}`}
-                value={formatStock(position.stockBalance, STOCK_DECIMALS, 2)}
+                label="Worth at expiry"
+                value={
+                  <>
+                    {formatStock(
+                      supply > 0n ? (backing * held) / supply : 0n,
+                      stock.decimals,
+                      4,
+                    )}
+                    <span className="ml-1.5 text-sm font-normal text-neutral-400">
+                      {stock.symbol}
+                    </span>
+                  </>
+                }
+                sub="if nothing else changes"
               />
             </div>
           </Card>
         ) : null}
 
-        <p className="px-1 text-xs leading-relaxed text-ink-faint">
-          Buy the story. When it expires, you get the stock. Your payout is the
-          vault split across every token — so you gain if the narrative kept
-          growing after you bought, and you still receive {STOCK_SYMBOL} either
-          way.
+        {/* About */}
+        <Card className="space-y-4">
+          {narrative.meta?.description ? (
+            <p className="text-sm leading-relaxed text-neutral-600">
+              {narrative.meta.description}
+            </p>
+          ) : null}
+
+          <dl className="divide-y divide-neutral-100 text-sm">
+            <Row label="Expires">
+              <span className="numeric">{formatDate(narrative.expiryTs)}</span>
+              <span className="ml-2 text-xs text-neutral-400">
+                fixed at creation
+              </span>
+            </Row>
+            <Row label="Created">
+              <span className="numeric">{formatDate(narrative.createdTs)}</span>
+            </Row>
+            <Row label="Creator">
+              <a
+                href={explorerUrl(narrative.creator)}
+                target="_blank"
+                rel="noreferrer"
+                className="numeric inline-flex items-center gap-1 hover:text-neutral-900"
+              >
+                {shortAddress(narrative.creator)}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              {creatorHoldings !== null ? (
+                <span className="ml-2 text-xs text-neutral-400">
+                  holds {creatorHoldings.toLocaleString()}{" "}
+                  {supply > 0n
+                    ? `(${((Number(creatorHoldings) / Number(supply)) * 100).toFixed(1)}%)`
+                    : ""}
+                </span>
+              ) : null}
+            </Row>
+            <Row label="Creator fee">
+              <span className="numeric">
+                {(narrative.feeBps / 100).toFixed(2)}%
+              </span>
+              <span className="ml-2 text-xs text-neutral-400">on every buy</span>
+            </Row>
+            <Row label="Exit tax">
+              <span className="numeric">
+                {(narrative.sellTaxBps / 100).toFixed(0)}%
+              </span>
+              <span className="ml-2 text-xs text-neutral-400">
+                stays in the vault for holders who remain
+              </span>
+            </Row>
+            <Row label="Token">
+              <a
+                href={explorerUrl(narrative.narrativeMint)}
+                target="_blank"
+                rel="noreferrer"
+                className="numeric inline-flex items-center gap-1 hover:text-neutral-900"
+              >
+                {shortAddress(narrative.narrativeMint)}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </Row>
+          </dl>
+
+          {narrative.meta?.website ||
+          narrative.meta?.twitter ||
+          narrative.meta?.telegram ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {narrative.meta.website ? (
+                <LinkChip href={narrative.meta.website}>Website</LinkChip>
+              ) : null}
+              {narrative.meta.twitter ? (
+                <LinkChip href={narrative.meta.twitter}>X</LinkChip>
+              ) : null}
+              {narrative.meta.telegram ? (
+                <LinkChip href={narrative.meta.telegram}>Telegram</LinkChip>
+              ) : null}
+            </div>
+          ) : null}
+        </Card>
+
+        <p className="px-1 text-sm leading-relaxed text-neutral-400">
+          Your payout is the vault split evenly across every token. You gain if
+          the narrative kept growing after you bought, and you receive{" "}
+          {stock.symbol} either way. Nothing here checks whether the story came
+          true: payoff follows flows, not facts.
         </p>
       </div>
     </Shell>
+  );
+}
+
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <dt className="shrink-0 text-neutral-400">{label}</dt>
+      <dd className="min-w-0 text-right text-neutral-600">{children}</dd>
+    </div>
+  );
+}
+
+function LinkChip({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-200"
+    >
+      {children}
+      <ExternalLink className="h-3 w-3" />
+    </a>
   );
 }

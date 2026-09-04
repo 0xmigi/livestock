@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   decodeNarrative,
   decodeTokenAmount,
+  findNarrative,
   findVault,
   NARRATIVE_ACCOUNT_LEN,
   NARRATIVE_DISCRIMINATOR,
@@ -24,12 +25,24 @@ import {
 } from "@solana-program/token";
 import type { Address } from "@solana/kit";
 
-import { rpc, STOCK_MINT, TOKEN_2022_PROGRAM, TOKEN_PROGRAM } from "./config";
+import {
+  rpc,
+  STOCKS,
+  stockFor,
+  TOKEN_2022_PROGRAM,
+  TOKEN_PROGRAM,
+  type StockInfo,
+} from "./config";
+import { fetchTokenMeta, type TokenMeta } from "./metadata";
 
 export type NarrativeRow = Narrative & {
   address: Address;
   /** Live vault balance, which can exceed `finalVault` before expiry. */
   vaultBalance: bigint;
+  /** The stock this narrative expires into. */
+  stock: StockInfo;
+  /** Off-chain metadata: image, description, links. */
+  meta: TokenMeta | null;
 };
 
 export type Position = {
@@ -53,6 +66,23 @@ async function fetchData(addr: Address): Promise<Uint8Array | null> {
 async function fetchTokenAmount(addr: Address): Promise<bigint> {
   const data = await fetchData(addr);
   return data ? decodeTokenAmount(data) : 0n;
+}
+
+/** Balances of many token accounts in one RPC call. Missing accounts read 0. */
+async function fetchTokenAmounts(addrs: Address[]): Promise<bigint[]> {
+  if (addrs.length === 0) return [];
+  const out: bigint[] = [];
+  // getMultipleAccounts caps at 100 addresses per call.
+  for (let i = 0; i < addrs.length; i += 100) {
+    const chunk = addrs.slice(i, i + 100);
+    const { value } = await rpc
+      .getMultipleAccounts(chunk, { encoding: "base64" })
+      .send();
+    for (const account of value) {
+      out.push(account ? decodeTokenAmount(decodeBase64(account.data[0])) : 0n);
+    }
+  }
+  return out;
 }
 
 async function ata(
@@ -80,39 +110,64 @@ export async function fetchStockTokenProgram(
   return (value?.owner as Address | undefined) ?? TOKEN_PROGRAM;
 }
 
+async function decorate(
+  bare: (Narrative & { address: Address })[],
+): Promise<NarrativeRow[]> {
+  const [balances, metas] = await Promise.all([
+    fetchTokenAmounts(bare.map((n) => n.vault)),
+    fetchTokenMeta(bare.map((n) => n.narrativeMint)),
+  ]);
+
+  return bare.map((n, i) => ({
+    ...n,
+    vaultBalance: balances[i] ?? 0n,
+    stock: stockFor(n.stockMint, n.stockDecimals),
+    meta: metas.get(n.narrativeMint) ?? null,
+  }));
+}
+
 /** Every narrative the program knows about. */
 async function loadAll(): Promise<NarrativeRow[]> {
   const accounts = await rpc
     .getProgramAccounts(NARRATIVE_MARKETS_PROGRAM_ID, {
       encoding: "base64",
-      // Size alone narrows it enough; the discriminator is checked below.
+      // Size alone narrows it enough; discriminator and version are checked
+      // by the decoder.
       filters: [{ dataSize: BigInt(NARRATIVE_ACCOUNT_LEN) }],
     })
     .send();
 
-  const rows: NarrativeRow[] = [];
+  const bare: (Narrative & { address: Address })[] = [];
   for (const { pubkey, account } of accounts) {
     try {
       const data = decodeBase64(account.data[0]);
       if (data[0] !== NARRATIVE_DISCRIMINATOR) continue;
       const narrative = decodeNarrative(data);
-      // Only show narratives for the stock this deployment is pointed at.
-      if (STOCK_MINT && narrative.stockMint !== STOCK_MINT) continue;
-      rows.push({
-        ...narrative,
-        address: pubkey,
-        vaultBalance: await fetchTokenAmount(narrative.vault),
-      });
+
+      // Accounts from earlier layouts that happen to share the size and
+      // version byte are rejected here: their address will not match the
+      // current seed derivation.
+      const [expected] = await findNarrative(narrative.narrativeMint);
+      if (expected !== pubkey) continue;
+
+      // A registry limits the page to stocks this deployment supports. With
+      // no registry configured, show everything.
+      if (STOCKS.length > 0 && !STOCKS.some((s) => s.mint === narrative.stockMint)) {
+        continue;
+      }
+
+      bare.push({ ...narrative, address: pubkey });
     } catch {
       // Skip anything that does not decode rather than failing the page.
     }
   }
 
+  const rows = await decorate(bare);
   // Expiring soonest first — the thing a visitor most wants to see.
   return rows.sort((a, b) => Number(a.expiryTs) - Number(b.expiryTs));
 }
 
-export function useNarratives(intervalMs = 8000) {
+export function useNarratives(intervalMs = 10_000) {
   const [rows, setRows] = useState<NarrativeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -134,14 +189,15 @@ export function useNarratives(intervalMs = 8000) {
   return { rows, error, refresh };
 }
 
-/** One narrative plus the connected wallet's position in it. */
+/** One narrative, the connected wallet's position, and the creator's stake. */
 export function useNarrative(
   narrativeAddress: Address | null,
   owner: Address | null,
-  intervalMs = 4000,
+  intervalMs = 5_000,
 ) {
   const [narrative, setNarrative] = useState<NarrativeRow | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
+  const [creatorHoldings, setCreatorHoldings] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -159,17 +215,19 @@ export function useNarrative(
       }
 
       const decoded = decodeNarrative(data);
-      const row: NarrativeRow = {
-        ...decoded,
-        address: narrativeAddress,
-        vaultBalance: await fetchTokenAmount(decoded.vault),
-      };
+      const [row] = await decorate([{ ...decoded, address: narrativeAddress }]);
       setNarrative(row);
       setError(null);
 
+      // Creator front-running is disclosed rather than prevented: show what
+      // they hold.
+      const creatorTokens = await ata(
+        decoded.narrativeMint,
+        decoded.creator,
+        TOKEN_2022_PROGRAM,
+      );
+
       if (owner) {
-        // Narrative mints are Token-2022, so their ATAs derive differently
-        // from a classic-SPL one.
         const tokenAccount = await ata(
           decoded.narrativeMint,
           owner,
@@ -180,13 +238,16 @@ export function useNarrative(
           owner,
           decoded.stockTokenProgram,
         );
-        const [tokens, stockBalance] = await Promise.all([
-          fetchTokenAmount(tokenAccount),
-          fetchTokenAmount(stockAccount),
+        const [tokens, stockBalance, creator] = await fetchTokenAmounts([
+          tokenAccount,
+          stockAccount,
+          creatorTokens,
         ]);
         setPosition({ tokens, tokenAccount, stockAccount, stockBalance });
+        setCreatorHoldings(creator);
       } else {
         setPosition(null);
+        setCreatorHoldings(await fetchTokenAmount(creatorTokens));
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -201,7 +262,7 @@ export function useNarrative(
     return () => clearInterval(timer);
   }, [refresh, intervalMs]);
 
-  return { narrative, position, error, loading, refresh };
+  return { narrative, position, creatorHoldings, error, loading, refresh };
 }
 
 /** Ticks once a second so countdowns re-render. */
@@ -228,6 +289,16 @@ export function formatCountdown(seconds: number): string {
 
   if (days > 0) return `${days}d ${String(h).padStart(2, "0")}h`;
   return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+/** `Sep 18, 14:02` in the viewer's locale. */
+export function formatDate(unixSeconds: bigint | number): string {
+  return new Date(Number(unixSeconds) * 1000).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export { findVault, ata };

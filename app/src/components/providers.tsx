@@ -8,9 +8,9 @@ import { CLUSTER, PRIVY_APP_ID, rpc, rpcSubscriptions } from "@/lib/config";
 export function Providers({ children }: { children: React.ReactNode }) {
   if (!PRIVY_APP_ID) {
     return (
-      <div className="mx-auto max-w-md px-6 py-20">
-        <h1 className="text-lg font-semibold">Missing Privy app ID</h1>
-        <p className="mt-2 text-sm text-ink-soft">
+      <div className="mx-auto max-w-md px-6 py-20 font-sans">
+        <h1 className="text-lg font-semibold text-neutral-900">Missing Privy app ID</h1>
+        <p className="mt-2 text-sm text-neutral-600">
           Copy <code>app/.env.example</code> to <code>app/.env.local</code> and
           set <code>NEXT_PUBLIC_PRIVY_APP_ID</code>.
         </p>
@@ -34,7 +34,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
         appearance: {
           theme: "light",
-          accentColor: "#18181b",
+          accentColor: "#5c5c56",
           walletChainType: "solana-only",
           walletList: ["detected_solana_wallets", "phantom", "solflare"],
         },

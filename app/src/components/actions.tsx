@@ -4,13 +4,14 @@
  * Buy, sell, and redeem.
  *
  * Each builds instructions with the shared client, has Privy sign the compiled
- * bytes, and broadcasts through the app's own RPC. The buyer's stock account is
- * created idempotently in the same transaction, so there is never a separate
- * "set up your account" step.
+ * bytes, and broadcasts through the app's own RPC. The buyer's token accounts
+ * are created idempotently in the same transaction, so there is never a
+ * separate "set up your account" step.
  *
- * On mainnet a Jupiter swap belongs at the front of the buy transaction, so the
- * user spends USDC and the program still receives stock. That adapter is the
- * one piece not wired here yet — see `SWAP` below.
+ * Payment is in the stock itself. On mainnet a Jupiter swap belongs at the
+ * front of the buy transaction so the user can spend USDC and the program
+ * still receives stock; that adapter is not wired yet, so the panel shows the
+ * wallet's stock balance and quotes in dollars at the live price.
  */
 
 import { useState } from "react";
@@ -22,6 +23,7 @@ import {
   netSellProceeds,
   proRata,
   sellRefund,
+  spotPrice,
   tokensForStock,
   usdToStock,
   getBuyInstruction,
@@ -37,14 +39,13 @@ import { createNoopSigner, type Address, type Instruction } from "@solana/kit";
 
 import {
   formatUsd,
+  formatUsdAuto,
   SOLANA_CHAIN,
-  STOCK_DECIMALS,
-  STOCK_SYMBOL,
   TOKEN_2022_PROGRAM,
 } from "@/lib/config";
 import type { NarrativeRow, Position } from "@/lib/narratives";
 import { signAndSend, toUserMessage } from "@/lib/tx";
-import { Button, Field, Notice, inputClass } from "./ui";
+import { Button, Notice, Panel, Segmented } from "./ui";
 
 type Props = {
   narrative: NarrativeRow;
@@ -125,6 +126,27 @@ async function ataFor(
   return pda;
 }
 
+function Line({
+  label,
+  children,
+  strong = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  strong?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 text-sm">
+      <span className="text-neutral-400">{label}</span>
+      <span
+        className={`numeric text-right ${strong ? "font-medium text-neutral-900" : "text-neutral-600"}`}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
 export function BuyPanel({
   narrative,
   position,
@@ -136,11 +158,15 @@ export function BuyPanel({
   const [mode, setMode] = useState<"buy" | "sell">("buy");
   const { run, busy, error, signature } = useAction(onDone);
 
+  const stock = narrative.stock;
   const params = { basePrice: narrative.basePrice, slope: narrative.slope };
+  const toUsd = (units: bigint) =>
+    (Number(units) / 10 ** stock.decimals) * stockPrice;
+
   const usd = Number.parseFloat(dollars);
   const stockIn =
-    Number.isFinite(usd) && usd > 0
-      ? usdToStock(usd, stockPrice, STOCK_DECIMALS)
+    Number.isFinite(usd) && usd > 0 && stockPrice > 0
+      ? usdToStock(usd, stockPrice, stock.decimals)
       : 0n;
 
   const tokens = tokensForStock(
@@ -153,6 +179,18 @@ export function BuyPanel({
   const fee = applyBps(cost, narrative.feeBps);
   const maxIn = cost + fee;
 
+  // Price impact: how far your own buy pushes the marginal price.
+  const before = spotPrice(narrative.supply, params);
+  const after = spotPrice(narrative.supply + tokens, params);
+  const impactPct =
+    tokens > 0n && before > 0n
+      ? (Number(after - before) / Number(before)) * 100
+      : 0;
+  const avgPerToken = tokens > 0n ? cost / tokens : 0n;
+
+  const stockBalance = position?.stockBalance ?? 0n;
+  const insufficient = tokens > 0n && stockBalance < maxIn;
+
   const held = position?.tokens ?? 0n;
   const sellAll = held > 0n && held <= narrative.supply;
   const proceeds = sellAll
@@ -163,14 +201,14 @@ export function BuyPanel({
     : 0n;
 
   const buy = async () => {
-    const stock = narrative.stockTokenProgram;
-    const stockAta = await ataFor(narrative.stockMint, owner, stock);
+    const program = narrative.stockTokenProgram;
+    const stockAta = await ataFor(narrative.stockMint, owner, program);
     const tokenAta = await ataFor(
       narrative.narrativeMint,
       owner,
       TOKEN_2022_PROGRAM,
     );
-    const creatorFee = await ataFor(narrative.stockMint, narrative.creator, stock);
+    const creatorFee = await ataFor(narrative.stockMint, narrative.creator, program);
 
     await run(owner, [
       getCreateAssociatedTokenIdempotentInstruction({
@@ -185,7 +223,7 @@ export function BuyPanel({
         ata: creatorFee,
         owner: narrative.creator,
         mint: narrative.stockMint,
-        tokenProgram: stock,
+        tokenProgram: program,
       }),
       getBuyInstruction({
         buyer: owner,
@@ -196,7 +234,7 @@ export function BuyPanel({
         vault: narrative.vault,
         creatorFeeAccount: creatorFee,
         stockMint: narrative.stockMint,
-        stockTokenProgram: stock,
+        stockTokenProgram: program,
         tokensOut: tokens,
         maxStockIn: maxIn,
       }),
@@ -204,8 +242,8 @@ export function BuyPanel({
   };
 
   const sell = async () => {
-    const stock = narrative.stockTokenProgram;
-    const stockAta = await ataFor(narrative.stockMint, owner, stock);
+    const program = narrative.stockTokenProgram;
+    const stockAta = await ataFor(narrative.stockMint, owner, program);
     const tokenAta = await ataFor(
       narrative.narrativeMint,
       owner,
@@ -218,7 +256,7 @@ export function BuyPanel({
         ata: stockAta,
         owner,
         mint: narrative.stockMint,
-        tokenProgram: stock,
+        tokenProgram: program,
       }),
       getSellInstruction({
         seller: owner,
@@ -228,38 +266,36 @@ export function BuyPanel({
         sellerStockAccount: stockAta,
         vault: narrative.vault,
         stockMint: narrative.stockMint,
-        stockTokenProgram: stock,
+        stockTokenProgram: program,
         tokensIn: held,
         minStockOut: 0n,
       }),
     ]);
   };
 
+  const availableUsd = toUsd(stockBalance);
+  const setMax = () =>
+    setDollars(availableUsd > 0 ? (Math.floor(availableUsd * 100) / 100).toString() : "0");
+
   return (
     <div className="space-y-5">
       {held > 0n ? (
-        <div className="flex gap-1 rounded-full bg-fill p-1 text-sm">
-          {(["buy", "sell"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`flex-1 rounded-full py-2 font-medium capitalize transition-colors ${
-                mode === m
-                  ? "bg-white text-ink shadow-sm"
-                  : "text-ink-faint"
-              }`}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "buy", label: "Buy" },
+            { value: "sell", label: "Sell" },
+          ]}
+        />
       ) : null}
 
       {mode === "buy" ? (
         <>
-          <Field label="You pay">
-            <div className="flex items-center gap-2 rounded-xl border border-rule bg-white px-4 py-3">
-              <span className="text-2xl font-medium text-ink-faint">
+          {/* One big number, as on a trading app. */}
+          <label className="block rounded-2xl bg-neutral-50 px-5 py-5 focus-within:ring-2 focus-within:ring-neutral-200">
+            <div className="flex items-baseline gap-1">
+              <span className="numeric text-4xl font-semibold text-neutral-300">
                 $
               </span>
               <input
@@ -269,76 +305,141 @@ export function BuyPanel({
                 inputMode="decimal"
                 value={dollars}
                 onChange={(e) => setDollars(e.target.value)}
-                className="numeric w-full bg-transparent text-2xl font-medium outline-none"
+                className="numeric w-full bg-transparent text-4xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
                 placeholder="0"
+                aria-label="Amount in dollars"
               />
             </div>
-          </Field>
+            <div className="mt-1 text-sm text-neutral-400">
+              {tokens > 0n ? (
+                <>
+                  ≈ <span className="numeric">{tokens.toLocaleString()}</span>{" "}
+                  ${narrative.symbol}
+                </>
+              ) : (
+                "Enter an amount"
+              )}
+            </div>
+          </label>
 
-          <div className="flex items-baseline justify-between rounded-xl bg-fill px-4 py-3.5">
-            <span className="text-sm text-ink-soft">You receive</span>
-            <span className="numeric text-lg font-medium">
-              {tokens.toLocaleString()}{" "}
-              <span className="text-sm font-normal text-ink-faint">
-                {narrative.symbol}
-              </span>
-            </span>
+          <div className="flex items-center gap-2">
+            {[10, 25, 50, 100].map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setDollars(String(v))}
+                className={`numeric flex-1 rounded-xl py-2 text-sm font-medium transition-colors ${
+                  dollars === String(v)
+                    ? "bg-neutral-200 text-neutral-900"
+                    : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
+                }`}
+              >
+                ${v}
+              </button>
+            ))}
           </div>
 
-          <p className="text-xs leading-relaxed text-ink-faint">
-            {tokens > 0n ? (
-              <>
-                Costs {formatStock(maxIn, STOCK_DECIMALS)} {STOCK_SYMBOL},
-                including a {(narrative.feeBps / 100).toFixed(2)}% creator fee.
-                At expiry these convert into {STOCK_SYMBOL}.
-              </>
-            ) : (
-              <>
-                Minimum one token — the curve starts at{" "}
-                {formatStock(narrative.basePrice, STOCK_DECIMALS, 6)}{" "}
-                {STOCK_SYMBOL}.
-              </>
-            )}
-          </p>
+          <div className="flex items-center justify-between text-sm">
+            <span className="numeric text-neutral-400">
+              {formatStock(stockBalance, stock.decimals, 4)} {stock.symbol}{" "}
+              available
+              {stockPrice > 0 ? ` · ≈ ${formatUsd(availableUsd)}` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={setMax}
+              className="font-semibold text-neutral-900 hover:underline"
+            >
+              Max
+            </button>
+          </div>
+
+          {tokens > 0n ? (
+            <div className="space-y-2 border-t border-neutral-100 pt-4">
+              <Line label="You receive" strong>
+                {tokens.toLocaleString()} ${narrative.symbol}
+              </Line>
+              <Line label="Paid in stock">
+                {formatStock(maxIn, stock.decimals, 6)} {stock.symbol}
+              </Line>
+              <Line label="Average per token">
+                {formatUsdAuto(toUsd(avgPerToken))}
+              </Line>
+              <Line label={`Creator fee ${(narrative.feeBps / 100).toFixed(1)}%`}>
+                {formatStock(fee, stock.decimals, 6)} {stock.symbol}
+              </Line>
+              <Line label="Price impact">
+                <span className={impactPct >= 5 ? "text-accent" : ""}>
+                  +{impactPct.toFixed(impactPct < 1 ? 2 : 1)}%
+                </span>
+              </Line>
+            </div>
+          ) : null}
+
+          {insufficient ? (
+            <Notice kind="warning">
+              You need {formatStock(maxIn, stock.decimals, 4)} {stock.symbol} in
+              this wallet for that buy. Lower the amount or top up {stock.symbol}.
+            </Notice>
+          ) : tokens === 0n && stockIn > 0n ? (
+            <p className="text-sm text-neutral-400">
+              Minimum one token. The curve starts at{" "}
+              {formatStock(narrative.basePrice, stock.decimals, 6)} {stock.symbol}{" "}
+              (≈ {formatUsdAuto(toUsd(narrative.basePrice))}).
+            </p>
+          ) : null}
 
           <Button
             onClick={buy}
-            disabled={busy || tokens === 0n}
-            className="w-full"
+            disabled={busy || tokens === 0n || insufficient}
+            className="w-full !py-3.5 !text-base"
+            size="lg"
           >
-            {busy ? "Confirming…" : `Buy ${narrative.symbol}`}
+            {busy ? "Confirming…" : `Buy $${narrative.symbol}`}
           </Button>
+
+          <p className="text-center text-xs leading-relaxed text-neutral-400">
+            Converts into {stock.symbol} at expiry. Nothing to sell, no exit to
+            time.
+          </p>
         </>
       ) : (
         <>
-          <div className="rounded-xl bg-fill px-4 py-3.5">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm text-ink-soft">
-                Sell all {held.toLocaleString()}
+          <div className="rounded-2xl bg-neutral-50 px-5 py-5">
+            <div className="text-sm text-neutral-400">
+              Sell all {held.toLocaleString()} ${narrative.symbol}
+            </div>
+            <div className="numeric mt-1 text-4xl font-semibold text-neutral-900">
+              {formatStock(proceeds, stock.decimals, 4)}{" "}
+              <span className="text-lg font-medium text-neutral-400">
+                {stock.symbol}
               </span>
-              <span className="numeric text-lg font-medium">
-                {formatStock(proceeds, STOCK_DECIMALS)}{" "}
-                <span className="text-sm font-normal text-ink-faint">
-                  {STOCK_SYMBOL}
-                </span>
-              </span>
+            </div>
+            <div className="mt-1 text-sm text-neutral-400">
+              ≈ {formatUsd(toUsd(proceeds))}
             </div>
           </div>
 
-          <p className="text-xs leading-relaxed text-ink-faint">
-            A {(narrative.sellTaxBps / 100).toFixed(0)}% exit tax of{" "}
-            {formatStock(tax, STOCK_DECIMALS)} {STOCK_SYMBOL} stays in the
-            vault for the holders who stay to expiry. Holding costs you nothing.
-          </p>
+          <div className="space-y-2">
+            <Line label={`Exit tax ${(narrative.sellTaxBps / 100).toFixed(0)}%`}>
+              {formatStock(tax, stock.decimals, 6)} {stock.symbol}
+            </Line>
+          </div>
 
           <Button
             onClick={sell}
-            variant="secondary"
+            variant="outline"
             disabled={busy || !sellAll}
-            className="w-full"
+            className="w-full !py-3.5 !text-base"
+            size="lg"
           >
             {busy ? "Confirming…" : "Sell everything"}
           </Button>
+
+          <p className="text-center text-xs leading-relaxed text-neutral-400">
+            The exit tax stays in the vault for the holders who stay to expiry.
+            Holding costs you nothing.
+          </p>
         </>
       )}
 
@@ -356,14 +457,14 @@ export function RedeemPanel({
 }: Props) {
   const { run, busy, error, signature } = useAction(onDone);
   const held = position?.tokens ?? 0n;
+  const stock = narrative.stock;
 
   const payout = proRata(narrative.finalVault, held, narrative.finalSupply);
-  const payoutUsd =
-    (Number(payout) / 10 ** STOCK_DECIMALS) * stockPrice;
+  const payoutUsd = (Number(payout) / 10 ** stock.decimals) * stockPrice;
 
   const redeem = async () => {
-    const stock = narrative.stockTokenProgram;
-    const stockAta = await ataFor(narrative.stockMint, owner, stock);
+    const program = narrative.stockTokenProgram;
+    const stockAta = await ataFor(narrative.stockMint, owner, program);
     const tokenAta = await ataFor(
       narrative.narrativeMint,
       owner,
@@ -376,7 +477,7 @@ export function RedeemPanel({
         ata: stockAta,
         owner,
         mint: narrative.stockMint,
-        tokenProgram: stock,
+        tokenProgram: program,
       }),
       getRedeemInstruction({
         holder: owner,
@@ -386,7 +487,7 @@ export function RedeemPanel({
         holderStockAccount: stockAta,
         vault: narrative.vault,
         stockMint: narrative.stockMint,
-        stockTokenProgram: stock,
+        stockTokenProgram: program,
       }),
     ]);
   };
@@ -394,34 +495,43 @@ export function RedeemPanel({
   if (held === 0n) {
     return (
       <Notice>
-        You do not hold any {narrative.symbol}. This narrative has settled.
+        You do not hold any ${narrative.symbol}. Holders can convert their tokens
+        into {stock.symbol} here; there is no deadline.
       </Notice>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-xl bg-fill px-4 py-4">
-        <div className="label">Your claim</div>
-        <div className="numeric mt-1.5 text-3xl font-medium tracking-tight">
-          {formatStock(payout, STOCK_DECIMALS)}{" "}
-          <span className="text-base font-normal text-ink-faint">
-            {STOCK_SYMBOL}
+    <div className="space-y-4">
+      <Panel className="rounded-2xl px-5 py-5">
+        <div className="text-xs uppercase tracking-widest text-neutral-400">
+          Your claim
+        </div>
+        <div className="numeric mt-1.5 text-4xl font-semibold tracking-tight text-neutral-900">
+          {formatStock(payout, stock.decimals, 4)}{" "}
+          <span className="text-base font-normal text-neutral-400">
+            {stock.symbol}
           </span>
         </div>
-        <div className="mt-1 text-xs text-ink-faint">
-          ≈ {formatUsd(payoutUsd)} · {held.toLocaleString()} of{" "}
-          {narrative.finalSupply.toLocaleString()} tokens
+        <div className="mt-1 text-xs text-neutral-400">
+          {stockPrice > 0 ? `≈ ${formatUsd(payoutUsd)} · ` : ""}
+          {held.toLocaleString()} of {narrative.finalSupply.toLocaleString()}{" "}
+          tokens
         </div>
-      </div>
+      </Panel>
 
-      <Button onClick={redeem} disabled={busy} className="w-full">
-        {busy ? "Confirming…" : `Convert to ${STOCK_SYMBOL}`}
+      <Button
+        onClick={redeem}
+        disabled={busy}
+        className="w-full !py-3.5 !text-base"
+        size="lg"
+      >
+        {busy ? "Confirming…" : `Convert to ${stock.symbol}`}
       </Button>
 
-      <p className="text-xs leading-relaxed text-ink-faint">
-        Burns all your {narrative.symbol} and sends you the stock. There is no
-        deadline — your claim does not expire.
+      <p className="text-xs leading-relaxed text-neutral-400">
+        Burns all your ${narrative.symbol} and sends the stock to your wallet.
+        Your claim does not expire.
       </p>
 
       <Result error={error} signature={signature} />

@@ -1,31 +1,57 @@
 @import "tailwindcss";
 
+/*
+ * Livestock follows the Moment app's visual system: Inter on a white ground,
+ * warm neutrals instead of blue-greys, one amber accent, and generous air.
+ * Status dots are the only other colour on the page.
+ */
 @theme {
-  /* Warm off-white ground with near-black type — the page should read as
-     paper, not as a dashboard. */
-  --color-paper: #fafaf9;
-  --color-ink: #18181b;
-  --color-ink-soft: #52525b;
-  --color-ink-faint: #a1a1aa;
-  --color-rule: #e7e5e4;
-  --color-fill: #f4f4f5;
+  --font-sans: var(--font-inter), Inter, ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
 
+  /* Warm neutrals — the whole palette. */
+  --color-neutral-50: #fafaf8;
+  --color-neutral-100: #f3f3ef;
+  --color-neutral-200: #e8e8e3;
+  --color-neutral-300: #d4d4ce;
+  --color-neutral-400: #8a8a82;
+  --color-neutral-500: #8a8a82;
+  --color-neutral-600: #5c5c56;
+  --color-neutral-700: #5c5c56;
+  --color-neutral-800: #3a3a36;
+  --color-neutral-900: #1a1a18;
+  --color-neutral-950: #0f0f0d;
+
+  /* Primary action — the olive-grey button Moment uses for "Continue". */
+  --color-primary: #5c5c56;
+  --color-primary-hover: #3a3a36;
+  --color-primary-light: #f3f3ef;
+
+  /* Amber accent — progress, highlights, "expiring soon". */
+  --color-accent: #d97706;
+  --color-accent-hover: #b45309;
+  --color-accent-light: #fef3c7;
+
+  /* Status dots. */
   --color-live: #22c55e;
-  --color-closing: #f59e0b;
-  --color-settled: #a1a1aa;
-
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter,
-    sans-serif;
+  --color-closing: #d97706;
+  --color-settled: #8a8a82;
 }
 
 :root {
   color-scheme: light;
 }
 
+html,
 body {
-  background: var(--color-paper);
-  color: var(--color-ink);
+  height: 100%;
+}
+
+body {
+  background: #ffffff;
+  color: var(--color-neutral-900);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
@@ -35,13 +61,37 @@ body {
   font-feature-settings: "tnum";
 }
 
-/* The small uppercase label that sits above every hero number. */
+/* The small uppercase label that sits above a hero number. */
 .label {
-  font-size: 0.6875rem;
-  line-height: 1;
+  font-size: 0.8125rem;
+  line-height: 1.25;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-ink-faint);
+  color: var(--color-neutral-400);
+}
+
+/* Thin scrollbars, as in Moment. */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 input[type="number"]::-webkit-outer-spin-button,
@@ -51,4 +101,11 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 input[type="number"] {
   -moz-appearance: textfield;
+}
+
+/* iOS Safari safe areas. */
+@supports (-webkit-touch-callout: none) {
+  .min-h-screen {
+    min-height: -webkit-fill-available;
+  }
 }
