@@ -1,0 +1,30 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #0b0a08;
+  min-height: 100%;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse at top, rgba(212, 162, 74, 0.08), transparent 50%),
+    linear-gradient(180deg, #0b0a08 0%, #110f0c 100%);
+}
+
+.wallet-adapter-button {
+  background: #d4a24a !important;
+  color: #0b0a08 !important;
+  font-family: "IBM Plex Mono", monospace !important;
+  font-size: 13px !important;
+  height: 36px !important;
+  border-radius: 8px !important;
+}

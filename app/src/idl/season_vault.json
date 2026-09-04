@@ -1,0 +1,837 @@
+{
+  "address": "5XUdp44mcYjdG4WhqYYAMAkAHcrFeKnfMWPFUdpi5rCq",
+  "metadata": {
+    "name": "season_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Seasonal convertible for a tokenized stock"
+  },
+  "instructions": [
+    {
+      "name": "init_vault",
+      "discriminator": [
+        77,
+        79,
+        85,
+        150,
+        33,
+        217,
+        52,
+        106
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "stock_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stock_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stock_vault_ata",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  111,
+                  99,
+                  107,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stock_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "market_maker_ata",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  95,
+                  109,
+                  97,
+                  107,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stock_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "stock_per_sol",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_season",
+      "discriminator": [
+        38,
+        108,
+        29,
+        127,
+        60,
+        126,
+        101,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "vault.season_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "narrative_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  97,
+                  114,
+                  114,
+                  97,
+                  116,
+                  105,
+                  118,
+                  101,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "vault.season_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve_sol_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  95,
+                  115,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "vault.season_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "duration_secs",
+          "type": "i64"
+        },
+        {
+          "name": "fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "narrative_decimals",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "buy",
+      "discriminator": [
+        102,
+        6,
+        61,
+        18,
+        1,
+        218,
+        235,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "season",
+          "writable": true
+        },
+        {
+          "name": "narrative_mint",
+          "writable": true
+        },
+        {
+          "name": "buyer_narrative_ata",
+          "writable": true
+        },
+        {
+          "name": "stock_mint"
+        },
+        {
+          "name": "stock_vault_ata",
+          "writable": true
+        },
+        {
+          "name": "market_maker_ata",
+          "writable": true
+        },
+        {
+          "name": "curve_sol_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_recipient",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_sol",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_season",
+      "discriminator": [
+        162,
+        198,
+        31,
+        37,
+        77,
+        0,
+        199,
+        152
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "season",
+          "writable": true
+        },
+        {
+          "name": "stock_vault_ata"
+        },
+        {
+          "name": "narrative_mint",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "redeem",
+      "discriminator": [
+        184,
+        12,
+        86,
+        149,
+        70,
+        196,
+        97,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "season",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "narrative_mint",
+          "writable": true
+        },
+        {
+          "name": "owner_narrative_ata",
+          "writable": true
+        },
+        {
+          "name": "stock_mint"
+        },
+        {
+          "name": "stock_vault_ata",
+          "writable": true
+        },
+        {
+          "name": "owner_stock_ata",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "roll",
+      "discriminator": [
+        143,
+        143,
+        93,
+        91,
+        13,
+        254,
+        64,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "season",
+          "writable": true
+        },
+        {
+          "name": "next_season",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "narrative_mint",
+          "writable": true
+        },
+        {
+          "name": "next_narrative_mint",
+          "writable": true
+        },
+        {
+          "name": "owner_narrative_ata",
+          "writable": true
+        },
+        {
+          "name": "owner_next_narrative_ata",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    },
+    {
+      "name": "Season",
+      "discriminator": [
+        76,
+        67,
+        93,
+        156,
+        180,
+        157,
+        248,
+        47
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6001,
+      "name": "SeasonAlreadyLive",
+      "msg": "A live season already exists for this vault"
+    },
+    {
+      "code": 6002,
+      "name": "SeasonNotLive",
+      "msg": "Season is not live"
+    },
+    {
+      "code": 6003,
+      "name": "SeasonNotClosed",
+      "msg": "Season is not closed"
+    },
+    {
+      "code": 6004,
+      "name": "SeasonNotExpired",
+      "msg": "Season has not expired; only admin can close early"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidName",
+      "msg": "Season name must be 1..=32 bytes"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidFee",
+      "msg": "Fee bps exceeds 10000"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidDuration",
+      "msg": "Duration must be positive"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidAmount",
+      "msg": "Buy amount must be greater than zero"
+    },
+    {
+      "code": 6009,
+      "name": "ZeroTokensOut",
+      "msg": "Curve produced zero tokens for this SOL amount"
+    },
+    {
+      "code": 6010,
+      "name": "InsufficientMmInventory",
+      "msg": "Market-maker inventory is insufficient for this buy"
+    },
+    {
+      "code": 6011,
+      "name": "NoTokens",
+      "msg": "No narrative tokens to redeem or roll"
+    },
+    {
+      "code": 6012,
+      "name": "AlreadyRedeemed",
+      "msg": "Position already redeemed"
+    },
+    {
+      "code": 6013,
+      "name": "AlreadyRolled",
+      "msg": "Position already rolled"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidNextSeason",
+      "msg": "Next season is invalid"
+    },
+    {
+      "code": 6015,
+      "name": "ArithmeticOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6016,
+      "name": "NothingToRedeem",
+      "msg": "Redeemable supply is zero"
+    },
+    {
+      "code": 6017,
+      "name": "MintMismatch",
+      "msg": "Narrative mint mismatch"
+    }
+  ],
+  "types": [
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "season",
+            "type": "pubkey"
+          },
+          {
+            "name": "narrative_amount",
+            "type": "u64"
+          },
+          {
+            "name": "rolled",
+            "type": "bool"
+          },
+          {
+            "name": "redeemed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Season",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u32"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "narrative_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "end_ts",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "SeasonStatus"
+              }
+            }
+          },
+          {
+            "name": "curve_sol_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "stock_bought",
+            "type": "u64"
+          },
+          {
+            "name": "narrative_supply",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "base",
+            "type": "u64"
+          },
+          {
+            "name": "slope",
+            "type": "u64"
+          },
+          {
+            "name": "decimals",
+            "type": "u8"
+          },
+          {
+            "name": "redeemable_stock",
+            "type": "u64"
+          },
+          {
+            "name": "redeemable_supply",
+            "type": "u64"
+          },
+          {
+            "name": "remaining_stock",
+            "type": "u64"
+          },
+          {
+            "name": "remaining_supply",
+            "type": "u64"
+          },
+          {
+            "name": "sol_reserve",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SeasonStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Live"
+          },
+          {
+            "name": "Closed"
+          },
+          {
+            "name": "Settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "stock_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "stock_vault_ata",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_maker_ata",
+            "type": "pubkey"
+          },
+          {
+            "name": "live_season",
+            "type": "pubkey"
+          },
+          {
+            "name": "season_index",
+            "type": "u32"
+          },
+          {
+            "name": "total_stock",
+            "type": "u64"
+          },
+          {
+            "name": "pending_claims",
+            "type": "u64"
+          },
+          {
+            "name": "stock_per_sol",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "season-vault",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "prebuild": "mkdir -p target/deploy && cp keys/season_vault-keypair.json target/deploy/season_vault-keypair.json",
+    "build": "anchor build --skip-lint",
+    "build:program": "mkdir -p target/deploy && cp keys/season_vault-keypair.json target/deploy/season_vault-keypair.json && cargo-build-sbf --manifest-path programs/season_vault/Cargo.toml --sbf-out-dir target/deploy",
+    "test": "npm run build:program && mkdir -p target/idl && cp idl/season_vault.json target/idl/season_vault.json && anchor test --skip-build --skip-lint",
+    "setup": "npx ts-node scripts/setup.ts",
+    "demo": "npx ts-node scripts/demo.ts",
+    "validator": "solana-test-validator --reset"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.2"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.20",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.13.10",
+    "chai": "^4.5.0",
+    "mocha": "^10.8.2",
+    "ts-mocha": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}

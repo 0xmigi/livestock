@@ -1,0 +1,24 @@
+[package]
+name = "season_vault"
+version = "0.1.0"
+description = "Seasonal convertible for a tokenized stock"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "season_vault"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "=0.31.1", features = ["init-if-needed"] }
+anchor-spl = "=0.31.1"
+# Pin Solana crates to the installed CLI so Cargo does not pull
+# blake3/digest versions that require Rust 1.85 / edition 2024.
+solana-program = "=2.1.21"
