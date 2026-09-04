@@ -14,7 +14,7 @@ use {
         error::ProgramError,
         AccountView, ProgramResult,
     },
-    pinocchio_token::instructions::{Burn, Transfer},
+    pinocchio_token::instructions::{Burn, TransferChecked},
 };
 
 const NARRATIVE: usize = 1;
@@ -26,10 +26,12 @@ const NARRATIVE: usize = 1;
 /// 3. `[writable]` holder's narrative token account
 /// 4. `[writable]` holder's stock token account — receives the payout
 /// 5. `[writable]` vault token account
-/// 6. `[]` token program
+/// 6. `[]` stock mint
+/// 7. `[]` token program — classic SPL, for the narrative mint
+/// 8. `[]` stock token program
 pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
     let (tokens, payout) = {
-        let [holder, narrative, narrative_mint, holder_tokens, holder_stock, vault, token_program, ..] =
+        let [holder, narrative, narrative_mint, holder_tokens, holder_stock, vault, stock_mint, token_program, stock_token_program, ..] =
             &*accounts
         else {
             return Err(ProgramError::NotEnoughAccountKeys);
@@ -45,6 +47,8 @@ pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
 
         require_address(narrative_mint, &state.narrative_mint)?;
         require_address(vault, &state.vault)?;
+        require_address(stock_mint, &state.stock_mint)?;
+        require_address(stock_token_program, &state.stock_token_program)?;
 
         if state.status()? != Status::Expired {
             return Err(MarketError::NotExpired.into());
@@ -52,15 +56,29 @@ pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
 
         // The holder must own every token being burned.
         let tokens =
-            token_balance_checked(holder_tokens, &state.narrative_mint, holder.address())?;
+            token_balance_checked(
+                holder_tokens,
+                &TOKEN_PROGRAM,
+                &state.narrative_mint,
+                holder.address(),
+            )?;
         if tokens == 0 {
             return Err(MarketError::NothingToRedeem.into());
         }
-        token_balance_for_mint(holder_stock, &state.stock_mint)?;
+        token_balance_for_mint(
+            holder_stock,
+            &state.stock_token_program,
+            &state.stock_mint,
+        )?;
 
         let remaining = state.supply();
         let vault_balance =
-            token_balance_checked(vault, &state.stock_mint, narrative.address())?;
+            token_balance_checked(
+                vault,
+                &state.stock_token_program,
+                &state.stock_mint,
+                narrative.address(),
+            )?;
 
         // Integer division rounds every claim down, so the final claimant takes
         // whatever is left rather than leaving dust stranded in the vault.
@@ -71,7 +89,9 @@ pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
         };
 
         let bump = state.bump;
-        let stock_mint = state.stock_mint;
+        let decimals = state.stock_decimals;
+        let stock_key = state.stock_mint;
+        let stock_program = state.stock_token_program;
         let creator = state.creator;
         let name_buf = state.name;
         let name_len = state.name_len as usize;
@@ -84,13 +104,13 @@ pub fn redeem(accounts: &mut [AccountView]) -> ProgramResult {
             let bump_seed = [bump];
             let seeds = [
                 Seed::from(NARRATIVE_SEED),
-                Seed::from(stock_mint.as_ref()),
+                Seed::from(stock_key.as_ref()),
                 Seed::from(creator.as_ref()),
                 Seed::from(&name_buf[..name_len]),
                 Seed::from(&bump_seed),
             ];
-            Transfer::new(vault, holder_stock, narrative, payout)
-                .invoke_signed(&[Signer::from(&seeds[..])])?;
+            TransferChecked::new(vault, stock_mint, holder_stock, narrative, payout, decimals)
+                .invoke_signed_with_program(&[Signer::from(&seeds[..])], &stock_program)?;
         }
 
         (tokens, payout)

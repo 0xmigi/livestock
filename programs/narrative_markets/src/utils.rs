@@ -9,8 +9,24 @@ use {
         AccountView, Address,
     },
     pinocchio_system::instructions::CreateAccount,
-    pinocchio_token::state::{Account as TokenAccount, Mint},
 };
+
+/// Offsets into an SPL Token / Token-2022 token account.
+const TOKEN_ACCOUNT_LEN: usize = 165;
+const TOKEN_MINT_OFFSET: usize = 0;
+const TOKEN_OWNER_OFFSET: usize = 32;
+const TOKEN_AMOUNT_OFFSET: usize = 64;
+
+/// Offsets into an SPL Token / Token-2022 mint.
+const MINT_LEN: usize = 82;
+const MINT_DECIMALS_OFFSET: usize = 44;
+const MINT_INITIALIZED_OFFSET: usize = 45;
+
+fn address_at(data: &[u8], offset: usize) -> Address {
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&data[offset..offset + 32]);
+    Address::new_from_array(bytes)
+}
 
 /// Derives a PDA and its canonical bump. Initialization paths only — the bump
 /// search costs up to 255 hashes.
@@ -62,33 +78,77 @@ pub fn create_pda_account(
     .invoke_signed(&[Signer::from(seeds)])
 }
 
-/// Reads a token account's balance, checking its mint and owner.
+/// Reads (mint, owner, amount) from a token account.
+///
+/// SPL Token and Token-2022 share the same first 165 bytes, so the base fields
+/// are read the same way for both. `pinocchio_token`'s typed reader cannot be
+/// used here: it asserts the account is owned by the *classic* SPL Token
+/// program and rejects every Token-2022 account, which is what real tokenized
+/// stocks are.
+fn token_account_fields(
+    account: &AccountView,
+    token_program: &Address,
+) -> Result<(Address, Address, u64), ProgramError> {
+    if !account.owned_by(token_program) {
+        return Err(ProgramError::InvalidAccountOwner);
+    }
+
+    let data = account.try_borrow()?;
+    if data.len() < TOKEN_ACCOUNT_LEN {
+        return Err(MarketError::InvalidTokenAccount.into());
+    }
+
+    let mut amount = [0u8; 8];
+    amount.copy_from_slice(&data[TOKEN_AMOUNT_OFFSET..TOKEN_AMOUNT_OFFSET + 8]);
+
+    Ok((
+        address_at(&data, TOKEN_MINT_OFFSET),
+        address_at(&data, TOKEN_OWNER_OFFSET),
+        u64::from_le_bytes(amount),
+    ))
+}
+
+/// Reads a token account's balance, checking its token program, mint and owner.
 pub fn token_balance_checked(
     account: &AccountView,
+    token_program: &Address,
     expected_mint: &Address,
     expected_owner: &Address,
 ) -> Result<u64, ProgramError> {
-    let token_account = TokenAccount::from_account_view(account)?;
-    if token_account.mint() != expected_mint || token_account.owner() != expected_owner {
+    let (mint, owner, amount) = token_account_fields(account, token_program)?;
+    if &mint != expected_mint || &owner != expected_owner {
         return Err(MarketError::InvalidTokenAccount.into());
     }
-    Ok(token_account.amount())
+    Ok(amount)
 }
 
-/// Reads a token account's balance, checking only its mint.
+/// Reads a token account's balance, checking its token program and mint only.
 pub fn token_balance_for_mint(
     account: &AccountView,
+    token_program: &Address,
     expected_mint: &Address,
 ) -> Result<u64, ProgramError> {
-    let token_account = TokenAccount::from_account_view(account)?;
-    if token_account.mint() != expected_mint {
+    let (mint, _owner, amount) = token_account_fields(account, token_program)?;
+    if &mint != expected_mint {
         return Err(MarketError::InvalidTokenAccount.into());
     }
-    Ok(token_account.amount())
+    Ok(amount)
 }
 
-pub fn mint_is_initialized(account: &AccountView) -> Result<bool, ProgramError> {
-    Ok(Mint::from_account_view(account)?.is_initialized())
+/// Decimals of an initialized mint, for either token program.
+pub fn mint_decimals(
+    account: &AccountView,
+    token_program: &Address,
+) -> Result<u8, ProgramError> {
+    if !account.owned_by(token_program) {
+        return Err(ProgramError::InvalidAccountOwner);
+    }
+
+    let data = account.try_borrow()?;
+    if data.len() < MINT_LEN || data[MINT_INITIALIZED_OFFSET] == 0 {
+        return Err(MarketError::InvalidTokenAccount.into());
+    }
+    Ok(data[MINT_DECIMALS_OFFSET])
 }
 
 pub fn require_signer(account: &AccountView) -> ProgramResult {
@@ -120,8 +180,22 @@ pub fn require_program_owned(account: &AccountView) -> ProgramResult {
     Ok(())
 }
 
+/// The classic SPL Token program, used for narrative mints.
 pub fn require_token_program(account: &AccountView) -> ProgramResult {
-    if account.address() != &pinocchio_token::ID {
+    if account.address() != &crate::state::TOKEN_PROGRAM {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    Ok(())
+}
+
+/// The token program the *stock* belongs to.
+///
+/// Real tokenized stocks are Token-2022, so this must accept either. The
+/// concrete program is recorded on the narrative at creation and every later
+/// instruction checks the supplied account against it.
+pub fn require_stock_token_program(account: &AccountView) -> ProgramResult {
+    let key = account.address();
+    if key != &crate::state::TOKEN_PROGRAM && key != &crate::state::TOKEN_2022_PROGRAM {
         return Err(ProgramError::IncorrectProgramId);
     }
     Ok(())

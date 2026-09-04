@@ -12,6 +12,11 @@ import {
   getCreateNarrativeInstruction,
   usdToStock,
 } from "@nm/client";
+import {
+  findAssociatedTokenPda,
+  getCreateAssociatedTokenIdempotentInstruction,
+} from "@solana-program/token";
+import { createNoopSigner } from "@solana/kit";
 
 import {
   Button,
@@ -29,6 +34,7 @@ import {
   STOCK_MINT,
   STOCK_SYMBOL,
 } from "@/lib/config";
+import { fetchStockTokenProgram } from "@/lib/narratives";
 import { useStockPrice } from "@/lib/price";
 import { signAndSend, toUserMessage } from "@/lib/tx";
 
@@ -84,19 +90,38 @@ export default function Create() {
 
     try {
       const cleanName = name.trim();
+      // Read the stock's token program off its mint: tokenized stocks are
+      // Token-2022 while most mints are classic SPL, and the two derive
+      // different associated token addresses.
+      const stockTokenProgram = await fetchStockTokenProgram(STOCK_MINT);
+
       const [narrative] = await findNarrative(STOCK_MINT, owner, cleanName);
       const [narrativeMint] = await findNarrativeMint(narrative);
-      const [vault] = await findVault(narrative);
+      const [vault] = await findVault(
+        narrative,
+        STOCK_MINT,
+        stockTokenProgram,
+      );
 
       const expiryTs = BigInt(Math.floor(Date.now() / 1000) + duration);
 
       const instructions = [
+        // The program pins whatever vault it is handed rather than allocating
+        // one, so it must exist by the time create_narrative runs.
+        getCreateAssociatedTokenIdempotentInstruction({
+          payer: createNoopSigner(owner),
+          ata: vault,
+          owner: narrative,
+          mint: STOCK_MINT,
+          tokenProgram: stockTokenProgram,
+        }),
         getCreateNarrativeInstruction({
           creator: owner,
           narrative,
           stockMint: STOCK_MINT,
           narrativeMint,
           vault,
+          stockTokenProgram,
           name: cleanName,
           symbol: symbol.trim().toUpperCase(),
           expiryTs,

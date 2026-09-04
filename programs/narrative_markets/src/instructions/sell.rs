@@ -25,7 +25,7 @@ use {
         sysvars::{clock::Clock, Sysvar},
         AccountView, ProgramResult,
     },
-    pinocchio_token::instructions::{Burn, Transfer},
+    pinocchio_token::instructions::{Burn, TransferChecked},
 };
 
 const NARRATIVE: usize = 1;
@@ -37,7 +37,9 @@ const NARRATIVE: usize = 1;
 /// 3. `[writable]` seller's narrative token account
 /// 4. `[writable]` seller's stock token account — receives the proceeds
 /// 5. `[writable]` vault token account
-/// 6. `[]` token program
+/// 6. `[]` stock mint
+/// 7. `[]` token program — classic SPL, for the narrative mint
+/// 8. `[]` stock token program
 pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
     let tokens_in = read_u64(data, 0)?;
     let min_stock_out = read_u64(data, 8)?;
@@ -49,7 +51,7 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
     let now = Clock::get()?.unix_timestamp;
 
     {
-        let [seller, narrative, narrative_mint, seller_tokens, seller_stock, vault, token_program, ..] =
+        let [seller, narrative, narrative_mint, seller_tokens, seller_stock, vault, stock_mint, token_program, stock_token_program, ..] =
             &*accounts
         else {
             return Err(ProgramError::NotEnoughAccountKeys);
@@ -65,6 +67,8 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
 
         require_address(narrative_mint, &state.narrative_mint)?;
         require_address(vault, &state.vault)?;
+        require_address(stock_mint, &state.stock_mint)?;
+        require_address(stock_token_program, &state.stock_token_program)?;
 
         if state.status()? != Status::Live {
             return Err(MarketError::NotLive.into());
@@ -77,8 +81,17 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         }
 
         // The seller must own the tokens being burned.
-        token_balance_checked(seller_tokens, &state.narrative_mint, seller.address())?;
-        token_balance_for_mint(seller_stock, &state.stock_mint)?;
+        token_balance_checked(
+            seller_tokens,
+            &TOKEN_PROGRAM,
+            &state.narrative_mint,
+            seller.address(),
+        )?;
+        token_balance_for_mint(
+            seller_stock,
+            &state.stock_token_program,
+            &state.stock_mint,
+        )?;
 
         let refund = sell_refund(
             state.supply(),
@@ -95,7 +108,9 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         }
 
         let bump = state.bump;
-        let stock_mint = state.stock_mint;
+        let decimals = state.stock_decimals;
+        let stock_key = state.stock_mint;
+        let stock_program = state.stock_token_program;
         let creator = state.creator;
         let name_buf = state.name;
         let name_len = state.name_len as usize;
@@ -108,13 +123,13 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
             let bump_seed = [bump];
             let seeds = [
                 Seed::from(NARRATIVE_SEED),
-                Seed::from(stock_mint.as_ref()),
+                Seed::from(stock_key.as_ref()),
                 Seed::from(creator.as_ref()),
                 Seed::from(&name_buf[..name_len]),
                 Seed::from(&bump_seed),
             ];
-            Transfer::new(vault, seller_stock, narrative, payout)
-                .invoke_signed(&[Signer::from(&seeds[..])])?;
+            TransferChecked::new(vault, stock_mint, seller_stock, narrative, payout, decimals)
+                .invoke_signed_with_program(&[Signer::from(&seeds[..])], &stock_program)?;
         }
     }
 

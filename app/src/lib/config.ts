@@ -41,6 +41,16 @@ export const STOCK_MINT: Address | null = rawStockMint
 /** Ticker shown in the UI, e.g. "TSLAx". */
 export const STOCK_SYMBOL = process.env.NEXT_PUBLIC_STOCK_SYMBOL ?? "TSLAx";
 
+/** Classic SPL Token. */
+export const TOKEN_PROGRAM = address(
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+);
+
+/** SPL Token-2022 — what real tokenized stocks use. */
+export const TOKEN_2022_PROGRAM = address(
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+);
+
 /** xStocks carry 8 decimals. */
 export const STOCK_DECIMALS = Number(
   process.env.NEXT_PUBLIC_STOCK_DECIMALS ?? 8,

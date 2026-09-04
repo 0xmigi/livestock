@@ -115,12 +115,12 @@ function Result({
   return null;
 }
 
-async function ataFor(mint: Address, owner: Address): Promise<Address> {
-  const [pda] = await findAssociatedTokenPda({
-    mint,
-    owner,
-    tokenProgram: TOKEN_PROGRAM_ADDRESS,
-  });
+async function ataFor(
+  mint: Address,
+  owner: Address,
+  tokenProgram: Address = TOKEN_PROGRAM_ADDRESS,
+): Promise<Address> {
+  const [pda] = await findAssociatedTokenPda({ mint, owner, tokenProgram });
   return pda;
 }
 
@@ -162,9 +162,10 @@ export function BuyPanel({
     : 0n;
 
   const buy = async () => {
-    const stockAta = await ataFor(narrative.stockMint, owner);
+    const stock = narrative.stockTokenProgram;
+    const stockAta = await ataFor(narrative.stockMint, owner, stock);
     const tokenAta = await ataFor(narrative.narrativeMint, owner);
-    const creatorFee = await ataFor(narrative.stockMint, narrative.creator);
+    const creatorFee = await ataFor(narrative.stockMint, narrative.creator, stock);
 
     await run(owner, [
       getCreateAssociatedTokenIdempotentInstruction({
@@ -178,6 +179,7 @@ export function BuyPanel({
         ata: creatorFee,
         owner: narrative.creator,
         mint: narrative.stockMint,
+        tokenProgram: stock,
       }),
       getBuyInstruction({
         buyer: owner,
@@ -187,6 +189,8 @@ export function BuyPanel({
         buyerStockAccount: stockAta,
         vault: narrative.vault,
         creatorFeeAccount: creatorFee,
+        stockMint: narrative.stockMint,
+        stockTokenProgram: stock,
         tokensOut: tokens,
         maxStockIn: maxIn,
       }),
@@ -194,7 +198,8 @@ export function BuyPanel({
   };
 
   const sell = async () => {
-    const stockAta = await ataFor(narrative.stockMint, owner);
+    const stock = narrative.stockTokenProgram;
+    const stockAta = await ataFor(narrative.stockMint, owner, stock);
     const tokenAta = await ataFor(narrative.narrativeMint, owner);
 
     await run(owner, [
@@ -203,6 +208,7 @@ export function BuyPanel({
         ata: stockAta,
         owner,
         mint: narrative.stockMint,
+        tokenProgram: stock,
       }),
       getSellInstruction({
         seller: owner,
@@ -211,6 +217,8 @@ export function BuyPanel({
         sellerTokenAccount: tokenAta,
         sellerStockAccount: stockAta,
         vault: narrative.vault,
+        stockMint: narrative.stockMint,
+        stockTokenProgram: stock,
         tokensIn: held,
         minStockOut: 0n,
       }),
@@ -344,7 +352,8 @@ export function RedeemPanel({
     (Number(payout) / 10 ** STOCK_DECIMALS) * stockPrice;
 
   const redeem = async () => {
-    const stockAta = await ataFor(narrative.stockMint, owner);
+    const stock = narrative.stockTokenProgram;
+    const stockAta = await ataFor(narrative.stockMint, owner, stock);
     const tokenAta = await ataFor(narrative.narrativeMint, owner);
 
     await run(owner, [
@@ -353,6 +362,7 @@ export function RedeemPanel({
         ata: stockAta,
         owner,
         mint: narrative.stockMint,
+        tokenProgram: stock,
       }),
       getRedeemInstruction({
         holder: owner,
@@ -361,6 +371,8 @@ export function RedeemPanel({
         holderTokenAccount: tokenAta,
         holderStockAccount: stockAta,
         vault: narrative.vault,
+        stockMint: narrative.stockMint,
+        stockTokenProgram: stock,
       }),
     ]);
   };

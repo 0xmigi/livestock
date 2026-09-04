@@ -52,7 +52,12 @@ pub fn expire(accounts: &mut [AccountView]) -> ProgramResult {
         }
 
         let vault_balance =
-            token_balance_checked(vault, &state.stock_mint, narrative.address())?;
+            token_balance_checked(
+                vault,
+                &state.stock_token_program,
+                &state.stock_mint,
+                narrative.address(),
+            )?;
 
         let bump = state.bump;
         let stock_mint = state.stock_mint;

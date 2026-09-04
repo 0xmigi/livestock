@@ -84,13 +84,20 @@ async function loadCliSigner(): Promise<KeyPairSigner> {
   return createKeyPairSignerFromBytes(secret);
 }
 
-async function ata(mint: Address, owner: Address): Promise<Address> {
-  const [pda] = await findAssociatedTokenPda({
-    mint,
-    owner,
-    tokenProgram: TOKEN_PROGRAM_ADDRESS,
-  });
+async function ata(
+  mint: Address,
+  owner: Address,
+  tokenProgram: Address = TOKEN_PROGRAM_ADDRESS,
+): Promise<Address> {
+  const [pda] = await findAssociatedTokenPda({ mint, owner, tokenProgram });
   return pda;
+}
+
+/** The stock's token program, read from the mint. xStocks are Token-2022. */
+async function stockTokenProgramOf(mint: Address): Promise<Address> {
+  const { value } = await rpc.getAccountInfo(mint, { encoding: "base64" }).send();
+  if (!value) throw new Error(`stock mint ${mint} not found`);
+  return value.owner as Address;
 }
 
 const NARRATIVES = [
@@ -109,6 +116,9 @@ async function main(): Promise<void> {
   console.log(`creator    ${signer.address}`);
   console.log(`stock      ${stockMint}\n`);
 
+  const stockTokenProgram = await stockTokenProgramOf(stockMint);
+  console.log(`token prog  ${stockTokenProgram}\n`);
+
   const basePrice = usdToStock(0.1, STOCK_PRICE_USD, STOCK_DECIMALS);
   const slope =
     (usdToStock(10, STOCK_PRICE_USD, STOCK_DECIMALS) - basePrice) / 1_000_000n;
@@ -116,7 +126,7 @@ async function main(): Promise<void> {
   for (const spec of NARRATIVES) {
     const [narrative] = await findNarrative(stockMint, signer.address, spec.name);
     const [narrativeMint] = await findNarrativeMint(narrative);
-    const [vault] = await findVault(narrative);
+    const [vault] = await findVault(narrative, stockMint, stockTokenProgram);
 
     const existing = await rpc.getAccountInfo(narrative).send();
     if (existing.value) {
@@ -129,12 +139,20 @@ async function main(): Promise<void> {
     );
 
     await send(signer, [
+      getCreateAssociatedTokenIdempotentInstruction({
+        payer: signer,
+        ata: vault,
+        owner: narrative,
+        mint: stockMint,
+        tokenProgram: stockTokenProgram,
+      }),
       getCreateNarrativeInstruction({
         creator: signer.address,
         narrative,
         stockMint,
         narrativeMint,
         vault,
+        stockTokenProgram,
         name: spec.name,
         symbol: spec.symbol,
         expiryTs,
@@ -151,9 +169,9 @@ async function main(): Promise<void> {
       const cost = buyCost(0n, tokens, { basePrice, slope });
       const total = cost + applyBps(cost, 100);
 
-      const stockAta = await ata(stockMint, signer.address);
+      const stockAta = await ata(stockMint, signer.address, stockTokenProgram);
       const tokenAta = await ata(narrativeMint, signer.address);
-      const creatorFee = await ata(stockMint, signer.address);
+      const creatorFee = stockAta;
 
       await send(signer, [
         getCreateAssociatedTokenIdempotentInstruction({
@@ -170,6 +188,8 @@ async function main(): Promise<void> {
           buyerStockAccount: stockAta,
           vault,
           creatorFeeAccount: creatorFee,
+          stockMint,
+          stockTokenProgram,
           tokensOut: tokens,
           maxStockIn: total,
         }),

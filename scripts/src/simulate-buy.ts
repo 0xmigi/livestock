@@ -33,13 +33,20 @@ import {
 const RPC_URL = process.env.RPC_URL ?? "https://api.devnet.solana.com";
 const rpc = createSolanaRpc(RPC_URL);
 
-async function ata(mint: Address, owner: Address): Promise<Address> {
-  const [pda] = await findAssociatedTokenPda({
-    mint,
-    owner,
-    tokenProgram: TOKEN_PROGRAM_ADDRESS,
-  });
+async function ata(
+  mint: Address,
+  owner: Address,
+  tokenProgram: Address = TOKEN_PROGRAM_ADDRESS,
+): Promise<Address> {
+  const [pda] = await findAssociatedTokenPda({ mint, owner, tokenProgram });
   return pda;
+}
+
+/** The stock's token program, read from the mint. xStocks are Token-2022. */
+async function stockTokenProgramOf(mint: Address): Promise<Address> {
+  const { value } = await rpc.getAccountInfo(mint, { encoding: "base64" }).send();
+  if (!value) throw new Error(`stock mint ${mint} not found`);
+  return value.owner as Address;
 }
 
 async function main(): Promise<void> {
@@ -59,9 +66,9 @@ async function main(): Promise<void> {
   const cost = buyCost(n.supply, tokensOut, params);
   const maxIn = cost + applyBps(cost, n.feeBps);
 
-  const stockAta = await ata(n.stockMint, buyer);
+  const stockAta = await ata(n.stockMint, buyer, n.stockTokenProgram);
   const tokenAta = await ata(n.narrativeMint, buyer);
-  const creatorFee = await ata(n.stockMint, n.creator);
+  const creatorFee = await ata(n.stockMint, n.creator, n.stockTokenProgram);
 
   console.log(`\nbuyer stock ata   ${stockAta}`);
   console.log(`buyer token ata   ${tokenAta}`);
@@ -96,6 +103,7 @@ async function main(): Promise<void> {
             ata: creatorFee,
             owner: n.creator,
             mint: n.stockMint,
+            tokenProgram: n.stockTokenProgram,
           }),
           getBuyInstruction({
             buyer,
@@ -105,6 +113,8 @@ async function main(): Promise<void> {
             buyerStockAccount: stockAta,
             vault: n.vault,
             creatorFeeAccount: creatorFee,
+            stockMint: n.stockMint,
+            stockTokenProgram: n.stockTokenProgram,
             tokensOut,
             maxStockIn: maxIn,
           }),

@@ -25,7 +25,7 @@ import {
 } from "@solana-program/token";
 import type { Address } from "@solana/kit";
 
-import { rpc, STOCK_MINT } from "./config";
+import { rpc, STOCK_MINT, TOKEN_PROGRAM } from "./config";
 
 export type NarrativeRow = Narrative & {
   address: Address;
@@ -56,13 +56,29 @@ async function fetchTokenAmount(addr: Address): Promise<bigint> {
   return data ? decodeTokenAmount(data) : 0n;
 }
 
-async function ata(mint: Address, owner: Address): Promise<Address> {
-  const [pda] = await findAssociatedTokenPda({
-    mint,
-    owner,
-    tokenProgram: TOKEN_PROGRAM_ADDRESS,
-  });
+async function ata(
+  mint: Address,
+  owner: Address,
+  tokenProgram: Address = TOKEN_PROGRAM_ADDRESS,
+): Promise<Address> {
+  const [pda] = await findAssociatedTokenPda({ mint, owner, tokenProgram });
   return pda;
+}
+
+/**
+ * Which token program the stock mint belongs to, read from the mint's owner.
+ *
+ * Real tokenized stocks are Token-2022 while most other mints are classic SPL,
+ * and the two produce different associated token addresses — so this is
+ * discovered rather than assumed.
+ */
+export async function fetchStockTokenProgram(
+  stockMint: Address,
+): Promise<Address> {
+  const { value } = await rpc
+    .getAccountInfo(stockMint, { encoding: "base64" })
+    .send();
+  return (value?.owner as Address | undefined) ?? TOKEN_PROGRAM;
 }
 
 /** Every narrative the program knows about. */
@@ -154,7 +170,11 @@ export function useNarrative(
 
       if (owner) {
         const tokenAccount = await ata(decoded.narrativeMint, owner);
-        const stockAccount = await ata(decoded.stockMint, owner);
+        const stockAccount = await ata(
+          decoded.stockMint,
+          owner,
+          decoded.stockTokenProgram,
+        );
         const [tokens, stockBalance] = await Promise.all([
           fetchTokenAmount(tokenAccount),
           fetchTokenAmount(stockAccount),

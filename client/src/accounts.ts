@@ -12,7 +12,7 @@ const addressDecoder = getAddressDecoder();
 const HEADER = 2;
 
 export const NARRATIVE_DISCRIMINATOR = 1;
-export const NARRATIVE_ACCOUNT_LEN = HEADER + 240;
+export const NARRATIVE_ACCOUNT_LEN = HEADER + 280;
 
 export enum Status {
   Live = 0,
@@ -24,7 +24,13 @@ export type Narrative = {
   creator: Address;
   stockMint: Address;
   narrativeMint: Address;
+  /** Token account holding the backing stock, owned by the narrative PDA. */
   vault: Address;
+  /**
+   * Which token program the stock belongs to. Real tokenized stocks (xStocks)
+   * are Token-2022, so this is not always the classic SPL Token program.
+   */
+  stockTokenProgram: Address;
   name: string;
   symbol: string;
   createdTs: bigint;
@@ -39,6 +45,8 @@ export type Narrative = {
   feeBps: number;
   sellTaxBps: number;
   status: Status;
+  /** Decimals of the stock mint, needed for `TransferChecked`. */
+  stockDecimals: number;
 };
 
 function view(data: Uint8Array): DataView {
@@ -62,26 +70,28 @@ export function decodeNarrative(data: Uint8Array): Narrative {
   }
 
   const v = view(data);
-  const nameLen = data[HEADER + 231];
-  const symbolLen = data[HEADER + 232];
+  const nameLen = data[HEADER + 263];
+  const symbolLen = data[HEADER + 264];
 
   return {
     creator: readAddress(data, HEADER + 0),
     stockMint: readAddress(data, HEADER + 32),
     narrativeMint: readAddress(data, HEADER + 64),
     vault: readAddress(data, HEADER + 96),
-    name: text.decode(data.subarray(HEADER + 128, HEADER + 128 + nameLen)),
-    symbol: text.decode(data.subarray(HEADER + 160, HEADER + 160 + symbolLen)),
-    createdTs: v.getBigInt64(HEADER + 170, true),
-    expiryTs: v.getBigInt64(HEADER + 178, true),
-    basePrice: v.getBigUint64(HEADER + 186, true),
-    slope: v.getBigUint64(HEADER + 194, true),
-    supply: v.getBigUint64(HEADER + 202, true),
-    finalSupply: v.getBigUint64(HEADER + 210, true),
-    finalVault: v.getBigUint64(HEADER + 218, true),
-    feeBps: v.getUint16(HEADER + 226, true),
-    sellTaxBps: v.getUint16(HEADER + 228, true),
-    status: data[HEADER + 230] as Status,
+    stockTokenProgram: readAddress(data, HEADER + 128),
+    name: text.decode(data.subarray(HEADER + 160, HEADER + 160 + nameLen)),
+    symbol: text.decode(data.subarray(HEADER + 192, HEADER + 192 + symbolLen)),
+    createdTs: v.getBigInt64(HEADER + 202, true),
+    expiryTs: v.getBigInt64(HEADER + 210, true),
+    basePrice: v.getBigUint64(HEADER + 218, true),
+    slope: v.getBigUint64(HEADER + 226, true),
+    supply: v.getBigUint64(HEADER + 234, true),
+    finalSupply: v.getBigUint64(HEADER + 242, true),
+    finalVault: v.getBigUint64(HEADER + 250, true),
+    feeBps: v.getUint16(HEADER + 258, true),
+    sellTaxBps: v.getUint16(HEADER + 260, true),
+    status: data[HEADER + 262] as Status,
+    stockDecimals: data[HEADER + 267],
   };
 }
 

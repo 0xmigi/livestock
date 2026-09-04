@@ -71,6 +71,8 @@ export type CreateNarrativeInput = {
   stockMint: Address;
   narrativeMint: Address;
   vault: Address;
+  /** Classic SPL Token or Token-2022, depending on the stock. */
+  stockTokenProgram: Address;
   name: string;
   symbol: string;
   /** Unix seconds. Immutable once set. */
@@ -102,9 +104,10 @@ export function getCreateNarrativeInstruction(
       w(input.narrative),
       r(input.stockMint),
       w(input.narrativeMint),
-      w(input.vault),
+      r(input.vault),
       r(SYSTEM_PROGRAM_ID),
       r(TOKEN_PROGRAM_ID),
+      r(input.stockTokenProgram),
     ],
     data: encode(
       NarrativeInstruction.CreateNarrative,
@@ -130,6 +133,8 @@ export type BuyInput = {
   vault: Address;
   /** The creator's stock account — receives the fee. */
   creatorFeeAccount: Address;
+  stockMint: Address;
+  stockTokenProgram: Address;
   /** Tokens to mint. Narrative mints have 0 decimals. */
   tokensOut: bigint;
   /** Slippage bound, in stock base units, curve cost plus fee. */
@@ -147,7 +152,9 @@ export function getBuyInstruction(input: BuyInput): Instruction {
       w(input.buyerStockAccount),
       w(input.vault),
       w(input.creatorFeeAccount),
+      r(input.stockMint),
       r(TOKEN_PROGRAM_ID),
+      r(input.stockTokenProgram),
     ],
     data: encode(
       NarrativeInstruction.Buy,
@@ -164,6 +171,8 @@ export type SellInput = {
   sellerTokenAccount: Address;
   sellerStockAccount: Address;
   vault: Address;
+  stockMint: Address;
+  stockTokenProgram: Address;
   tokensIn: bigint;
   /** Slippage bound, in stock base units, net of the sell tax. */
   minStockOut: bigint;
@@ -179,7 +188,9 @@ export function getSellInstruction(input: SellInput): Instruction {
       w(input.sellerTokenAccount),
       w(input.sellerStockAccount),
       w(input.vault),
+      r(input.stockMint),
       r(TOKEN_PROGRAM_ID),
+      r(input.stockTokenProgram),
     ],
     data: encode(
       NarrativeInstruction.Sell,
@@ -217,6 +228,8 @@ export type RedeemInput = {
   /** Stock account that receives the payout. */
   holderStockAccount: Address;
   vault: Address;
+  stockMint: Address;
+  stockTokenProgram: Address;
 };
 
 export function getRedeemInstruction(input: RedeemInput): Instruction {
@@ -229,7 +242,9 @@ export function getRedeemInstruction(input: RedeemInput): Instruction {
       w(input.holderTokenAccount),
       w(input.holderStockAccount),
       w(input.vault),
+      r(input.stockMint),
       r(TOKEN_PROGRAM_ID),
+      r(input.stockTokenProgram),
     ],
     data: encode(NarrativeInstruction.Redeem),
   };

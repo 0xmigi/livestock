@@ -18,8 +18,12 @@ use {
 pub const NARRATIVE_SEED: &[u8] = b"narrative";
 /// PDA seed prefix for a narrative's mint.
 pub const MINT_SEED: &[u8] = b"mint";
-/// PDA seed prefix for a narrative's stock vault.
-pub const VAULT_SEED: &[u8] = b"vault";
+/// SPL Token program.
+pub const TOKEN_PROGRAM: Address =
+    Address::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+/// SPL Token-2022 program. Real tokenized stocks (xStocks) live here.
+pub const TOKEN_2022_PROGRAM: Address =
+    Address::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 
 pub const MAX_NAME_LEN: usize = 32;
 pub const MAX_SYMBOL_LEN: usize = 10;
@@ -73,8 +77,12 @@ pub struct Narrative {
     /// The tokenized stock this narrative expires into.
     pub stock_mint: Address,
     pub narrative_mint: Address,
-    /// Token account holding the stock that backs this narrative.
+    /// Token account holding the stock that backs this narrative. Owned by
+    /// this narrative's PDA; pinned at creation and enforced thereafter.
     pub vault: Address,
+    /// Which token program the stock mint belongs to. xStocks are Token-2022,
+    /// so this cannot be assumed to be the classic SPL Token program.
+    pub stock_token_program: Address,
     pub name: [u8; MAX_NAME_LEN],
     pub symbol: [u8; MAX_SYMBOL_LEN],
     created_ts: [u8; 8],
@@ -97,15 +105,16 @@ pub struct Narrative {
     pub symbol_len: u8,
     pub bump: u8,
     pub mint_bump: u8,
-    pub vault_bump: u8,
-    pub _reserved: [u8; 4],
+    /// Decimals of the stock mint, needed for `TransferChecked`.
+    pub stock_decimals: u8,
+    pub _reserved: [u8; 12],
 }
 
 /// Total account size including the 2-byte header.
-pub const NARRATIVE_LEN: usize = HEADER + 240;
+pub const NARRATIVE_LEN: usize = HEADER + 280;
 
 const _: () = assert!(
-    core::mem::size_of::<Narrative>() == 240,
+    core::mem::size_of::<Narrative>() == 280,
     "unexpected padding in Narrative",
 );
 const _: () = assert!(
@@ -162,6 +171,7 @@ impl Narrative {
         stock_mint: &Address,
         narrative_mint: &Address,
         vault: &Address,
+        stock_token_program: &Address,
         name: &[u8],
         symbol: &[u8],
         created_ts: i64,
@@ -170,9 +180,9 @@ impl Narrative {
         slope: u64,
         fee_bps: u16,
         sell_tax_bps: u16,
+        stock_decimals: u8,
         bump: u8,
         mint_bump: u8,
-        vault_bump: u8,
     ) -> Result<(), MarketError> {
         if name.is_empty() || name.len() > MAX_NAME_LEN {
             return Err(MarketError::InvalidInstructionData);
@@ -185,6 +195,7 @@ impl Narrative {
         self.stock_mint = *stock_mint;
         self.narrative_mint = *narrative_mint;
         self.vault = *vault;
+        self.stock_token_program = *stock_token_program;
 
         self.name = [0u8; MAX_NAME_LEN];
         self.name[..name.len()].copy_from_slice(name);
@@ -204,10 +215,10 @@ impl Narrative {
         self.fee_bps = fee_bps.to_le_bytes();
         self.sell_tax_bps = sell_tax_bps.to_le_bytes();
         self.status = Status::Live as u8;
+        self.stock_decimals = stock_decimals;
         self.bump = bump;
         self.mint_bump = mint_bump;
-        self.vault_bump = vault_bump;
-        self._reserved = [0u8; 4];
+        self._reserved = [0u8; 12];
         Ok(())
     }
 
@@ -285,5 +296,20 @@ impl Narrative {
     pub fn freeze(&mut self, vault_balance: u64) {
         self.final_supply = self.supply;
         self.final_vault = vault_balance.to_le_bytes();
+    }
+}
+
+impl Narrative {
+    /// Seeds this narrative's PDA signs with, minus the bump.
+    ///
+    /// Every instruction that moves tokens needs these, and getting them out
+    /// of one place keeps them from drifting apart.
+    pub fn signer_seeds(&self) -> [&[u8]; 4] {
+        [
+            NARRATIVE_SEED,
+            self.stock_mint.as_ref(),
+            self.creator.as_ref(),
+            self.name(),
+        ]
     }
 }
