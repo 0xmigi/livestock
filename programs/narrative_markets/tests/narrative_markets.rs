@@ -125,6 +125,13 @@ fn vault_balance(m: &Market) -> u64 {
     m.env.token_balance(&m.vault)
 }
 
+/// Any funded wallet — a keeper — pays the fee for a permissionless payout.
+fn convert(m: &mut Market, h: &Holder) -> Result<(), ()> {
+    let keeper = m.env.creator.insecure_clone();
+    let ix = convert_ix(&m.env, &m.narrative_mint, &h.tokens, &h.stock, &m.narrative, &m.vault);
+    m.env.send(&[ix], &[&keeper]).map(|_| ()).map_err(|_| ())
+}
+
 fn expire(m: &mut Market) {
     m.env.advance_clock(DURATION + 1);
     let payer = m.env.creator.insecure_clone();
@@ -732,7 +739,7 @@ fn a_mint_that_did_not_hand_over_authority_is_rejected() {
     // Authority kept by the creator rather than handed to the narrative PDA,
     // which would let them keep minting alongside the curve.
     let (narrative_mint, narrative) =
-        env.create_narrative_mint_with(Some(key), None, None);
+        env.create_narrative_mint_with(Some(key), None, None, Delegate::Narrative);
     let vault = env.create_vault(&narrative);
 
     let ix = create_narrative_ix(
@@ -754,7 +761,7 @@ fn a_mint_with_a_freeze_authority_is_rejected() {
 
     // A freeze authority could strand every holder's tokens before expiry.
     let (narrative_mint, narrative) =
-        env.create_narrative_mint_with(None, Some(key), None);
+        env.create_narrative_mint_with(None, Some(key), None, Delegate::Narrative);
     let vault = env.create_vault(&narrative);
 
     let ix = create_narrative_ix(
@@ -773,7 +780,7 @@ fn a_mint_with_the_wrong_decimals_is_rejected() {
 
     // Decimals feed the curve directly; 6 would silently rescale every price.
     let (narrative_mint, narrative) =
-        env.create_narrative_mint_with(None, None, Some(6));
+        env.create_narrative_mint_with(None, None, Some(6), Delegate::Narrative);
     let vault = env.create_vault(&narrative);
 
     let ix = create_narrative_ix(
@@ -781,4 +788,73 @@ fn a_mint_with_the_wrong_decimals_is_rejected() {
         FEE_BPS, SELL_TAX_BPS,
     );
     assert!(env.send(&[ix], &[&creator]).is_err());
+}
+
+// --- conversion: paying everyone out without their signature ---------------
+
+#[test]
+fn convert_pays_every_holder_without_their_signature() {
+    let mut m = setup();
+    let a = holder(&mut m);
+    let b = holder(&mut m);
+
+    buy(&mut m, &a, 333);
+    buy(&mut m, &b, 667);
+    expire(&mut m);
+    let pot = state(&m, |s| s.final_vault());
+
+    let a_before = m.env.token_balance(&a.stock);
+    let b_before = m.env.token_balance(&b.stock);
+
+    // Neither A nor B signs anything from here on.
+    convert(&mut m, &a).expect("keeper converts A");
+    convert(&mut m, &b).expect("keeper converts B");
+
+    let a_payout = m.env.token_balance(&a.stock) - a_before;
+    let b_payout = m.env.token_balance(&b.stock) - b_before;
+    assert_eq!(a_payout, pot * 333 / 1_000);
+    assert_eq!(a_payout + b_payout, pot, "the whole pot is paid out");
+    assert_eq!(m.env.token_balance(&a.tokens), 0);
+    assert_eq!(m.env.token_balance(&b.tokens), 0);
+    assert_eq!(vault_balance(&m), 0);
+    state(&m, |s| assert_eq!(s.status().unwrap(), Status::Settled));
+}
+
+#[test]
+fn convert_cannot_redirect_a_payout() {
+    let mut m = setup();
+    let a = holder(&mut m);
+    let thief = holder(&mut m);
+    buy(&mut m, &a, 500);
+    expire(&mut m);
+
+    // A's tokens, but the stock account belongs to someone else.
+    let keeper = m.env.creator.insecure_clone();
+    let ix = convert_ix(&m.env, &m.narrative_mint, &a.tokens, &thief.stock, &m.narrative, &m.vault);
+    assert!(m.env.send(&[ix], &[&keeper]).is_err());
+    assert_eq!(m.env.token_balance(&a.tokens), 500, "nothing was burned");
+}
+
+#[test]
+fn convert_before_expiry_fails() {
+    let mut m = setup();
+    let a = holder(&mut m);
+    buy(&mut m, &a, 100);
+    assert!(convert(&mut m, &a).is_err());
+}
+
+#[test]
+fn a_mint_whose_delegate_is_not_the_narrative_is_rejected() {
+    for delegate in [Delegate::None, Delegate::Other(Keypair::new().pubkey())] {
+        let mut env = Env::new();
+        let creator = env.creator.insecure_clone();
+        let expiry = env.now() + DURATION;
+        let (mint, narrative) = env.create_narrative_mint_with(None, None, None, delegate);
+        let vault = env.create_vault(&narrative);
+        let ix = create_narrative_ix(
+            &env, &creator.pubkey(), &mint, &vault, "ROBOTAXI", "RBTX", expiry,
+            BASE_PRICE, SLOPE, FEE_BPS, SELL_TAX_BPS,
+        );
+        assert!(env.send(&[ix], &[&creator]).is_err());
+    }
 }

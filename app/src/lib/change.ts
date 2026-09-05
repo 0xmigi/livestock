@@ -88,7 +88,9 @@ async function scan(narrative: Address, n: Narrative): Promise<Activity> {
 }
 
 function load(address: Address, n: Narrative): Promise<Activity> {
-  const key = address as string;
+  // Keyed on supply too: every buy or sell changes it, so a trade that just
+  // landed is never hidden behind a cached scan from before it.
+  const key = `${address}:${n.supply}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const p = scan(address, n).catch(() => ({ supplyThen: null, volume: 0n, buys: 0, sells: 0 }));

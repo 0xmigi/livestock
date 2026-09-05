@@ -7,7 +7,7 @@ import { CLUSTER, PRIVY_APP_ID, rpc, rpcSubscriptions } from "@/lib/config";
 import { useTheme } from "@/lib/theme";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [theme] = useTheme();
+  const { theme } = useTheme();
 
   if (!PRIVY_APP_ID) {
     return (

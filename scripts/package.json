@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "seed": "tsx src/seed.ts",
+    "swap-buy": "tsx src/swap-buy.ts",
+    "keeper": "tsx src/keeper.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

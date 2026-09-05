@@ -52,6 +52,11 @@
   --warn-fill: #302a14;
 
   --shadow: rgba(0, 0, 0, 0.6);
+
+  /* Ground texture: a faint dot grid, and two slow colour washes behind it. */
+  --dot: rgba(255, 255, 255, 0.045);
+  --wash-a: rgba(81, 106, 246, 0.22);
+  --wash-b: rgba(33, 201, 94, 0.14);
 }
 
 :root[data-theme="light"] {
@@ -89,6 +94,10 @@
   --warn-fill: #fbf3d9;
 
   --shadow: rgba(28, 28, 29, 0.12);
+
+  --dot: rgba(28, 28, 29, 0.07);
+  --wash-a: rgba(59, 83, 224, 0.13);
+  --wash-b: rgba(10, 156, 79, 0.1);
 }
 
 @theme inline {
@@ -249,5 +258,69 @@ input[type="number"] {
 @supports (-webkit-touch-callout: none) {
   .min-h-screen {
     min-height: -webkit-fill-available;
+  }
+}
+
+/* --- ground ----------------------------------------------------------- */
+
+/* The page ground: the theme colour with a 1px dot grid over it. */
+.ground {
+  background-color: var(--ground);
+  background-image: radial-gradient(circle at 1px 1px, var(--dot) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/*
+ * Two large, blurred colour washes drifting slowly behind everything. Cards
+ * are opaque, so the colour shows only in the open ground between them.
+ */
+.wash {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.wash > span {
+  position: absolute;
+  width: 60vw;
+  height: 60vw;
+  max-width: 900px;
+  max-height: 900px;
+  border-radius: 50%;
+  filter: blur(90px);
+  will-change: transform;
+}
+.wash > span:first-child {
+  top: -20vw;
+  left: -15vw;
+  background: radial-gradient(circle, var(--wash-a), transparent 65%);
+  animation: wash-a 38s ease-in-out infinite alternate;
+}
+/* With a pointer, the blue wash trails it instead of drifting. */
+.wash > span.follows {
+  top: -30vw;
+  left: -30vw;
+  animation: none;
+  transform: translate(var(--mx, 15vw), var(--my, 10vh));
+  transition: transform 1.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wash > span:last-child {
+  right: -20vw;
+  bottom: -25vw;
+  background: radial-gradient(circle, var(--wash-b), transparent 65%);
+  animation: wash-b 46s ease-in-out infinite alternate;
+}
+@keyframes wash-a {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(18vw, 12vh) scale(1.15); }
+}
+@keyframes wash-b {
+  from { transform: translate(0, 0) scale(1.1); }
+  to { transform: translate(-16vw, -14vh) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wash > span {
+    animation: none;
   }
 }

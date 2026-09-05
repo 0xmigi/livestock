@@ -9,52 +9,25 @@
  * Storage is Vercel Blob: plain HTTPS URLs, which is what the metadata URI on
  * a real launchpad token points at. IPFS is not required, and a gateway that
  * goes down would take every token's image with it.
+ *
+ * Without a Blob token — local development, devnet — files land in
+ * `app/.uploads/` and are served back by /api/uploads, so creating works
+ * anywhere the app runs. Those URIs only resolve while this server is up.
  */
 
-import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-];
-
-/** The off-chain document a wallet fetches from the mint's URI. */
-type TokenMetadata = {
-  name: string;
-  symbol: string;
-  description: string;
-  image: string;
-  createdOn: string;
-  website?: string;
-  twitter?: string;
-  telegram?: string;
-};
-
-function slug(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 40) || "narrative"
-  );
-}
+import { BIO_MAX_CHARS } from "@/lib/config";
+import {
+  ALLOWED_IMAGE_TYPES,
+  IMAGE_EXTENSIONS,
+  MAX_IMAGE_BYTES,
+  slug,
+  store,
+  type TokenMetadata,
+} from "@/lib/server/storage";
 
 export async function POST(request: Request) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json(
-      {
-        error:
-          "Uploads are not configured. Set BLOB_READ_WRITE_TOKEN — see app/.env.example.",
-      },
-      { status: 501 },
-    );
-  }
-
   let form: FormData;
   try {
     form = await request.formData();
@@ -91,13 +64,12 @@ export async function POST(request: Request) {
   const base = slug(name);
 
   try {
-    // `addRandomSuffix` keeps two narratives with the same name from
-    // overwriting each other's image.
-    const uploadedImage = await put(`narrative-images/${base}`, image, {
-      access: "public",
-      addRandomSuffix: true,
-      contentType: image.type,
-    });
+    const imageUrl = await store(
+      request,
+      `narrative-images/${base}${IMAGE_EXTENSIONS[image.type] ?? ""}`,
+      image,
+      image.type,
+    );
 
     const optional = (key: string): string | undefined => {
       const value = String(form.get(key) ?? "").trim();
@@ -107,28 +79,22 @@ export async function POST(request: Request) {
     const metadata: TokenMetadata = {
       name,
       symbol,
-      description: String(form.get("description") ?? "").trim(),
-      image: uploadedImage.url,
+      description: String(form.get("description") ?? "").trim().slice(0, BIO_MAX_CHARS),
+      image: imageUrl,
       createdOn: request.headers.get("origin") ?? "",
       website: optional("website"),
       twitter: optional("twitter"),
       telegram: optional("telegram"),
     };
 
-    const uploadedJson = await put(
+    const uri = await store(
+      request,
       `narrative-metadata/${base}.json`,
       JSON.stringify(metadata),
-      {
-        access: "public",
-        addRandomSuffix: true,
-        contentType: "application/json",
-      },
+      "application/json",
     );
 
-    return NextResponse.json({
-      uri: uploadedJson.url,
-      image: uploadedImage.url,
-    });
+    return NextResponse.json({ uri, image: imageUrl });
   } catch (cause) {
     return NextResponse.json(
       { error: cause instanceof Error ? cause.message : "Upload failed." },

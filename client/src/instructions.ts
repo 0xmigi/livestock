@@ -25,6 +25,7 @@ export enum NarrativeInstruction {
   Sell = 2,
   Expire = 3,
   Redeem = 4,
+  Convert = 5,
 }
 
 const w = (address: Address) => ({ address, role: AccountRole.WRITABLE });
@@ -252,5 +253,38 @@ export function getRedeemInstruction(input: RedeemInput): Instruction {
       r(input.stockTokenProgram),
     ],
     data: encode(NarrativeInstruction.Redeem),
+  };
+}
+
+export type ConvertInput = {
+  narrative: Address;
+  narrativeMint: Address;
+  /** The holder's narrative token account; its owner receives the payout. */
+  holderTokenAccount: Address;
+  /** A stock account owned by that same holder. */
+  holderStockAccount: Address;
+  vault: Address;
+  stockMint: Address;
+  stockTokenProgram: Address;
+};
+
+/**
+ * Pays one holder out after expiry without their signature. Permissionless:
+ * whoever sends it pays the fee, and the payout can only go to the holder.
+ */
+export function getConvertInstruction(input: ConvertInput): Instruction {
+  return {
+    programAddress: NARRATIVE_MARKETS_PROGRAM_ID,
+    accounts: [
+      w(input.narrative),
+      w(input.narrativeMint),
+      w(input.holderTokenAccount),
+      w(input.holderStockAccount),
+      w(input.vault),
+      r(input.stockMint),
+      r(NARRATIVE_TOKEN_PROGRAM_ID),
+      r(input.stockTokenProgram),
+    ],
+    data: encode(NarrativeInstruction.Convert),
   };
 }

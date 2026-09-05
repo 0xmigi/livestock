@@ -22,6 +22,14 @@ const MINT_LEN: usize = 82;
 const MINT_DECIMALS_OFFSET: usize = 44;
 const MINT_INITIALIZED_OFFSET: usize = 45;
 
+/// Token-2022 lays extensions out after the base mint: padding to the token
+/// account length, one account-type byte, then TLV entries.
+const MINT_ACCOUNT_TYPE_OFFSET: usize = 165;
+const MINT_TLV_START: usize = 166;
+const ACCOUNT_TYPE_MINT: u8 = 1;
+const EXTENSION_UNINITIALIZED: u16 = 0;
+const EXTENSION_PERMANENT_DELEGATE: u16 = 12;
+
 fn address_at(data: &[u8], offset: usize) -> Address {
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&data[offset..offset + 32]);
@@ -183,6 +191,53 @@ pub fn read_mint(
         decimals: data[MINT_DECIMALS_OFFSET],
         freeze_authority: option(46, 50),
     })
+}
+
+/// The permanent delegate of a Token-2022 mint, if the extension is present.
+///
+/// The delegate can burn or move any holder's tokens. For a narrative mint it
+/// must be the narrative itself: that is what lets `convert` pay every holder
+/// out at expiry without a signature from each of them.
+pub fn mint_permanent_delegate(account: &AccountView) -> Result<Option<Address>, ProgramError> {
+    let data = account.try_borrow()?;
+    if data.len() <= MINT_TLV_START || data[MINT_ACCOUNT_TYPE_OFFSET] != ACCOUNT_TYPE_MINT {
+        return Ok(None);
+    }
+
+    let mut cursor = MINT_TLV_START;
+    while cursor + 4 <= data.len() {
+        let kind = u16::from_le_bytes([data[cursor], data[cursor + 1]]);
+        let len = u16::from_le_bytes([data[cursor + 2], data[cursor + 3]]) as usize;
+        if kind == EXTENSION_UNINITIALIZED {
+            break;
+        }
+        let start = cursor + 4;
+        let end = start
+            .checked_add(len)
+            .filter(|end| *end <= data.len())
+            .ok_or(ProgramError::InvalidAccountData)?;
+        if kind == EXTENSION_PERMANENT_DELEGATE {
+            if len != 32 {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            return Ok(Some(address_at(&data, start)));
+        }
+        cursor = end;
+    }
+    Ok(None)
+}
+
+/// Reads a token account's owner and balance, checking its program and mint.
+pub fn token_owner_and_balance(
+    account: &AccountView,
+    token_program: &Address,
+    expected_mint: &Address,
+) -> Result<(Address, u64), ProgramError> {
+    let (mint, owner, amount) = token_account_fields(account, token_program)?;
+    if &mint != expected_mint {
+        return Err(MarketError::InvalidTokenAccount.into());
+    }
+    Ok((owner, amount))
 }
 
 pub fn require_signer(account: &AccountView) -> ProgramResult {

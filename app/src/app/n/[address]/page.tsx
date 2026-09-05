@@ -3,7 +3,7 @@
 import { use } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { ChevronLeft, Clock, ExternalLink } from "lucide-react";
+import { ChevronLeft, Clock, ExternalLink, Link2 } from "lucide-react";
 import {
   formatStock,
   redemptionPerToken,
@@ -42,6 +42,7 @@ import {
 } from "@/lib/narratives";
 import { useActivity, usePriceChange } from "@/lib/change";
 import { useHolders } from "@/lib/holders";
+import { EditNarrative } from "@/components/edit-narrative";
 import { useStockPrice } from "@/lib/price";
 
 /** The clock: blue, mono, `13d 15h 1m 22s`, ticking every second. */
@@ -82,7 +83,7 @@ export default function NarrativePage({
   const { price, isLive: priceIsLive } = useStockPrice(narrative?.stockMint);
   const change = usePriceChange(parsed, narrative);
   const activity = useActivity(parsed, narrative);
-  const holders = useHolders(narrative?.narrativeMint ?? null);
+  const holders = useHolders(narrative?.narrativeMint ?? null, narrative?.supply ?? null);
 
   if (!parsed) {
     return (
@@ -128,6 +129,10 @@ export default function NarrativePage({
 
   const nextPrice = spotPrice(narrative.supply, narrative);
   const held = position?.tokens ?? 0n;
+  // Narratives minted with the program as permanent delegate are paid out by
+  // the keeper; older ones need each holder to claim.
+  const autoConverts = narrative.meta?.permanentDelegate === narrative.address;
+  const sourceHref = narrative.meta?.twitter ?? narrative.meta?.website ?? narrative.meta?.telegram ?? null;
 
   // What one token is worth right now: the vault split across supply. After
   // expiry this is the frozen redemption figure.
@@ -151,16 +156,28 @@ export default function NarrativePage({
       </Button>
     </div>
   ) : narrative.status === Status.Settled ? (
-    <Notice>This narrative is fully settled. Every claim has been converted into {stock.symbol}.</Notice>
+    <Notice>This narrative is fully settled. Every token has been converted into {stock.symbol}.</Notice>
+  ) : narrative.status === Status.Expired && autoConverts ? (
+    <div className="space-y-4">
+      <Notice>
+        {held > 0n
+          ? `Your ${held.toLocaleString()} $${narrative.symbol} are being converted into ${stock.symbol}. It lands in your wallet within a few minutes.`
+          : `Holders are being paid out in ${stock.symbol}.`}
+      </Notice>
+      {held > 0n ? (
+        <RedeemPanel narrative={narrative} position={position} owner={owner} stockPrice={price} onDone={refresh} compact />
+      ) : null}
+    </div>
   ) : narrative.status === Status.Expired ? (
     <RedeemPanel narrative={narrative} position={position} owner={owner} stockPrice={price} onDone={refresh} />
   ) : phase === "settling" ? (
     <div className="space-y-4">
       <Notice>
-        The date has passed and trading has stopped. Someone needs to settle it before claims open.
-        Anyone can, including you.
+        {autoConverts
+          ? `The date has passed and trading has stopped. Every holder is being paid out in ${stock.symbol}; this takes a few minutes.`
+          : "The date has passed and trading has stopped. Someone needs to settle it before claims open. Anyone can, including you."}
       </Notice>
-      <ExpireButton narrative={narrative} owner={owner} onDone={refresh} />
+      <ExpireButton narrative={narrative} owner={owner} onDone={refresh} quiet={autoConverts} />
     </div>
   ) : (
     <BuyPanel narrative={narrative} position={position} owner={owner} stockPrice={price} onDone={refresh} />
@@ -169,39 +186,63 @@ export default function NarrativePage({
   return (
     <Shell>
       <div className="space-y-8">
-        <Link
-          href="/"
-          className="mono inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-900"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-          Markets
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link
+            href="/"
+            className="mono inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-900"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Markets
+          </Link>
+          {owner ? <EditNarrative narrative={narrative} owner={owner} onDone={refresh} /> : null}
+        </div>
 
         {/* The clock and the action, in one panel */}
         <section className="grid overflow-hidden rounded border border-neutral-200 bg-neutral-50 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="flex flex-col justify-between gap-6 p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <Thumb src={narrative.meta?.image} name={narrative.name} size={48} shape="square" />
-                <div className="min-w-0">
-                  <h1 className="line-clamp-2 text-xl font-semibold leading-tight text-neutral-900">{narrative.name}</h1>
-                  <div className="mono mt-1 flex items-center gap-2 text-xs text-neutral-400">
-                    ${narrative.symbol}
-                    <span aria-hidden>·</span>
-                    <span className="inline-flex items-center gap-1">
-                      <StockLogo stock={stock} size={12} />
-                      {stock.symbol}
-                    </span>
-                    {phase !== "live" ? <StatusDot phase={phase} /> : null}
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Thumb src={narrative.meta?.image} name={narrative.name} size={48} shape="square" />
+                  <div className="min-w-0">
+                    <h1 className="line-clamp-2 text-xl font-semibold leading-tight text-neutral-900">{narrative.name}</h1>
+                    <div className="mono mt-1 flex items-center gap-2 text-xs text-neutral-400">
+                      ${narrative.symbol}
+                      <span aria-hidden>·</span>
+                      <span className="inline-flex items-center gap-1">
+                        <StockLogo stock={stock} size={12} />
+                        {stock.symbol}
+                      </span>
+                      {phase !== "live" ? <StatusDot phase={phase} /> : null}
+                    </div>
                   </div>
                 </div>
-              </div>
-              {tradable ? (
-                <div className="shrink-0 text-right">
-                  <div className="numeric text-3xl font-semibold tracking-tight text-neutral-900 sm:text-4xl">
-                    {formatUsdAuto(toUsd(nextPrice))}
+                {tradable ? (
+                  <div className="shrink-0 text-right">
+                    <div className="numeric text-3xl font-semibold tracking-tight text-neutral-900 sm:text-4xl">
+                      {formatUsdAuto(toUsd(nextPrice))}
+                    </div>
+                    <Delta pct={change?.pct ?? null} approx={change?.inStockTerms} className="text-sm font-medium" />
                   </div>
-                  <Delta pct={change?.pct ?? null} approx={change?.inStockTerms} className="text-sm font-medium" />
+                ) : null}
+              </div>
+              {/* The bio, as on a profile: a few lines and one link. */}
+              {narrative.meta?.description || sourceHref ? (
+                <div className="max-w-prose space-y-1.5">
+                  {narrative.meta?.description ? (
+                    <p className="text-[13px] leading-snug text-neutral-600">{narrative.meta.description}</p>
+                  ) : null}
+                  {sourceHref ? (
+                    <a
+                      href={sourceHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-neutral-400 transition-colors hover:text-neutral-900"
+                    >
+                      <Link2 className="h-3 w-3 shrink-0" />
+                      {sourceLabel(sourceHref)}
+                    </a>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -298,9 +339,6 @@ export default function NarrativePage({
           </div>
         </section>
 
-        {narrative.meta?.description ? (
-          <p className="px-1 text-sm leading-relaxed text-neutral-600">{narrative.meta.description}</p>
-        ) : null}
       </div>
     </Shell>
   );
@@ -323,6 +361,18 @@ function Small({ label, value }: { label: string; value: React.ReactNode }) {
       <div className="mono mt-0.5 truncate text-[13px] text-neutral-900">{value}</div>
     </div>
   );
+}
+
+/** A short name for where a link goes: "X", "Telegram", or the site's host. */
+function sourceLabel(href: string): string {
+  try {
+    const host = new URL(href).hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "x.com" || host === "twitter.com") return "X";
+    if (host === "t.me" || host === "telegram.me") return "Telegram";
+    return host;
+  } catch {
+    return "Link";
+  }
 }
 
 function FootLink({ href, children }: { href: string; children: string }) {

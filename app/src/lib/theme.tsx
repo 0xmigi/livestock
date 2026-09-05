@@ -1,61 +1,41 @@
 "use client";
 
 /**
- * Dark by default, light behind a toggle. The choice lives in localStorage and
- * on `<html data-theme>`; the root layout applies it before first paint.
+ * The app wears the system's colour scheme. Nothing to choose: `<html
+ * data-theme="light">` is set when the OS prefers light and absent otherwise,
+ * which is what globals.css keys off. The root layout resolves it before first
+ * paint; this hook keeps it in step if the OS changes while the page is open.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Moon, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
 
-export const THEME_KEY = "livestock.theme";
+export type Theme = "light" | "dark";
 
-export type Theme = "dark" | "light";
+const QUERY = "(prefers-color-scheme: light)";
 
-function read(): Theme {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.getAttribute("data-theme") === "light"
-    ? "light"
-    : "dark";
+function current(): Theme {
+  return typeof window !== "undefined" && window.matchMedia(QUERY).matches ? "light" : "dark";
 }
 
-export function useTheme(): [Theme, () => void] {
+function apply(theme: Theme) {
+  if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+  else document.documentElement.removeAttribute("data-theme");
+}
+
+export function useTheme(): { theme: Theme } {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
-    setTheme(read());
+    setTheme(current());
+    const media = window.matchMedia(QUERY);
+    const onChange = () => {
+      const next = current();
+      apply(next);
+      setTheme(next);
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
   }, []);
 
-  const toggle = useCallback(() => {
-    const next: Theme = read() === "light" ? "dark" : "light";
-    if (next === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-    }
-    try {
-      if (next === "light") localStorage.setItem(THEME_KEY, "light");
-      else localStorage.removeItem(THEME_KEY);
-    } catch {
-      // Private mode or blocked storage: the toggle still works for the session.
-    }
-    setTheme(next);
-  }, []);
-
-  return [theme, toggle];
-}
-
-export function ThemeToggle({ className = "" }: { className?: string }) {
-  const [theme, toggle] = useTheme();
-  const Icon = theme === "dark" ? Sun : Moon;
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={theme === "dark" ? "Switch to light" : "Switch to dark"}
-      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded bg-neutral-100 text-neutral-400 transition-colors hover:bg-neutral-200 hover:text-neutral-900 ${className}`}
-    >
-      <Icon className="h-4 w-4" strokeWidth={2} />
-    </button>
-  );
+  return { theme };
 }

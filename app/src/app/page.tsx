@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Check, ChevronDown, Plus, Search, Sprout } from "lucide-react";
 import { formatStock, redemptionPerToken, secondsRemaining, spotPrice } from "@nm/client";
 
+import { Highlight } from "@/components/highlight";
 import { Shell } from "@/components/shell";
 import { Thumb } from "@/components/thumb";
 import {
@@ -20,7 +21,7 @@ import {
   TimeBar,
   type Phase,
 } from "@/components/ui";
-import { formatUsd, formatUsdAuto, STOCKS } from "@/lib/config";
+import { formatUsd, formatUsdAuto } from "@/lib/config";
 import { usePriceChange } from "@/lib/change";
 import { useStockMeta } from "@/lib/logos";
 import {
@@ -31,6 +32,7 @@ import {
   type NarrativeRow,
 } from "@/lib/narratives";
 import { useStockPrices } from "@/lib/price";
+import { useStocks } from "@/lib/stocks";
 
 type View = "live" | "ended";
 type Sort = "fdv" | "new";
@@ -83,6 +85,7 @@ export default function Markets() {
   const { rows, error } = useNarratives();
   const now = useNow();
   const prices = useStockPrices();
+  const { stocks, loaded: stocksLoaded, error: stocksError } = useStocks();
 
   const [view, setView] = useState<View>("live");
   const [sort, setSort] = useState<Sort>("fdv");
@@ -143,7 +146,7 @@ export default function Markets() {
         <section className="grid gap-8 border-b border-neutral-200 pb-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
           <div className="max-w-xl">
             <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl">
-              Buy the story.
+              Buy the narrative.
               <br />
               <span className="text-neutral-400">When it expires, you get the stock.</span>
             </h1>
@@ -155,20 +158,23 @@ export default function Markets() {
             </Link>
           </div>
 
-          <div className="rounded border border-neutral-200 bg-neutral-50 p-5">
-            <div className="text-sm text-neutral-400">Livestock so far</div>
-            <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200">
-              <Stat label="launched" value={rows ? String(stats.launched) : "—"} />
-              <Stat label="combined FDV" value={rows ? compact(stats.fdv) : "—"} />
-              <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
-            </div>
-          </div>
+          {/* Proof over pitch: the week's best trade, or the tally until there is one. */}
+          <Highlight
+            fallback={
+              <div className="rounded border border-neutral-200 bg-neutral-50 p-5">
+                <div className="text-sm text-neutral-400">Livestock so far</div>
+                <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200">
+                  <Stat label="launched" value={rows ? String(stats.launched) : "—"} />
+                  <Stat label="combined FDV" value={rows ? compact(stats.fdv) : "—"} />
+                  <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
+                </div>
+              </div>
+            }
+          />
         </section>
 
-        {STOCKS.length === 0 ? (
-          <Notice kind="error">
-            No stock configured. Set <code>NEXT_PUBLIC_STOCKS</code> in <code>app/.env.local</code>.
-          </Notice>
+        {stocksLoaded && stocks.length === 0 ? (
+          <Notice kind="error">{stocksError ?? "No stocks are listed right now."}</Notice>
         ) : error ? (
           <Notice kind="error">Could not reach the network: {error}</Notice>
         ) : null}
@@ -201,7 +207,7 @@ export default function Markets() {
                 { value: "new", label: "Newest" },
               ]}
             />
-            <StockMenu value={stockFilter} onChange={setStockFilter} />
+            <StockMenu value={stockFilter} onChange={setStockFilter} rows={rows ?? []} />
             <label className="relative ml-auto w-full sm:w-56">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
               <input
@@ -256,24 +262,30 @@ export default function Markets() {
         </section>
 
         {/* How it works, for whoever scrolled this far */}
-        <section className="border-t border-neutral-200 pt-10">
-          <h2 className="text-xl font-semibold tracking-tight text-neutral-900">How it works</h2>
-          <div className="mt-6 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="overflow-hidden rounded border border-neutral-200 bg-neutral-50">
+          <div className="mono border-b border-neutral-200 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+            How it works
+          </div>
+          <div className="grid gap-px bg-neutral-200 sm:grid-cols-2 lg:grid-cols-4">
             <Step
-              title="A story with a date"
-              body="A narrative is one thing you think is about to happen, built on top of an existing token, with a date it ends."
+              n="00"
+              title="Pick a narrative"
+              body="Something you think is about to happen to a company: a launch, a ruling, a number. Each one is tied to that company's stock and ends on a set date. Find one, or create your own."
             />
             <Step
-              title="It trades on a curve"
-              body="Every buy pays into a vault in the underlying. Price rises with supply, so early buyers pay less than late ones. Selling early leaves a tax in the vault for whoever stays."
+              n="01"
+              title="Buy in with SOL"
+              body="Your SOL becomes the stock and goes into the narrative's vault. You get tokens. Every buy costs a little more than the one before it."
             />
             <Step
-              title="On the date it converts"
-              body="Trading stops. The vault is split evenly across every token, and each holder claims their share of the underlying. Claims never expire."
+              n="02"
+              title="Sell into the hype, or hold"
+              body="Sell any time and take the stock out, minus a 10% exit tax that stays in the vault for whoever holds. Or keep your tokens until the date."
             />
             <Step
-              title="Nobody judges the story"
-              body="Nothing checks whether it came true. You gain if the narrative kept growing after you bought, and you hold the underlying either way."
+              n="03"
+              title="It turns into the stock"
+              body="On the date, trading stops and the vault is paid out across every token, automatically. You end up holding the company. How much depends on your timing."
             />
           </div>
         </section>
@@ -282,11 +294,14 @@ export default function Markets() {
   );
 }
 
-function Step({ title, body }: { title: string; body: string }) {
+function Step({ n, title, body }: { n: string; title: string; body: string }) {
   return (
-    <div>
-      <div className="text-[15px] font-semibold text-neutral-900">{title}</div>
-      <p className="mt-2 text-sm leading-relaxed text-neutral-400">{body}</p>
+    <div className="bg-neutral-50 p-5">
+      <div className="flex items-baseline gap-2">
+        <span className="mono text-xs font-semibold text-accent">{n}</span>
+        <span className="text-[15px] font-semibold text-neutral-900">{title}</span>
+      </div>
+      <p className="mt-2.5 text-sm leading-relaxed text-neutral-400">{body}</p>
     </div>
   );
 }
@@ -363,11 +378,28 @@ function Feature({
   );
 }
 
-/** Which stock, as a dropdown. Logos in the menu, one line in the toolbar. */
-function StockMenu({ value, onChange }: { value: string | null; onChange: (mint: string | null) => void }) {
+/**
+ * Which stock, as a dropdown: only the stocks that have a narrative, so the
+ * menu is a filter and not the whole catalogue. Logos in the menu, one line
+ * in the toolbar.
+ */
+function StockMenu({
+  value,
+  onChange,
+  rows,
+}: {
+  value: string | null;
+  onChange: (mint: string | null) => void;
+  rows: NarrativeRow[];
+}) {
   const [open, setOpen] = useState(false);
   const meta = useStockMeta();
-  const current = STOCKS.find((s) => s.mint === value) ?? null;
+  const { stocks } = useStocks();
+  const options = useMemo(() => {
+    const used = new Set(rows.map((n) => n.stockMint as string));
+    return stocks.filter((s) => used.has(s.mint));
+  }, [stocks, rows]);
+  const current = stocks.find((s) => s.mint === value) ?? null;
   return (
     <div className="relative">
       <button
@@ -399,7 +431,7 @@ function StockMenu({ value, onChange }: { value: string | null; onChange: (mint:
               {value === null ? <Check className="h-3.5 w-3.5" /> : null}
             </button>
           </li>
-          {STOCKS.map((s) => (
+          {options.map((s) => (
             <li key={s.mint}>
               <button
                 type="button"

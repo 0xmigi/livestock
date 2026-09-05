@@ -26,8 +26,8 @@ import {
 import type { Address } from "@solana/kit";
 
 import {
+  getStocks,
   rpc,
-  STOCKS,
   stockFor,
   TOKEN_2022_PROGRAM,
   TOKEN_PROGRAM,
@@ -150,9 +150,10 @@ async function loadAll(): Promise<NarrativeRow[]> {
       const [expected] = await findNarrative(narrative.narrativeMint);
       if (expected !== pubkey) continue;
 
-      // A registry limits the page to stocks this deployment supports. With
-      // no registry configured, show everything.
-      if (STOCKS.length > 0 && !STOCKS.some((s) => s.mint === narrative.stockMint)) {
+      // The registry limits the page to stocks this deployment knows. Until
+      // it has loaded (or with nothing configured), show everything.
+      const stocks = getStocks();
+      if (stocks.length > 0 && !stocks.some((s) => s.mint === narrative.stockMint)) {
         continue;
       }
 

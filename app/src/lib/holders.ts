@@ -23,6 +23,7 @@ export type Holders = {
 };
 
 const cache = new Map<string, Promise<Holders | null>>();
+const TTL_MS = 60_000;
 
 async function scan(mint: Address): Promise<Holders> {
   const { value } = await rpc.getTokenLargestAccounts(mint).send();
@@ -43,27 +44,32 @@ async function scan(mint: Address): Promise<Holders> {
 }
 
 /** Null when the RPC would not answer (public endpoints rate-limit this call). */
-function load(mint: Address): Promise<Holders | null> {
-  const key = mint as string;
+function load(mint: Address, supply: bigint): Promise<Holders | null> {
+  // Keyed on supply: a trade changes it, and the holder set with it.
+  const key = `${mint}:${supply}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const p = scan(mint).catch(() => null);
+  const p = scan(mint).catch(() => {
+    // A refused call is not an answer; let the next render try again.
+    cache.delete(key);
+    return null;
+  });
   cache.set(key, p);
-  setTimeout(() => cache.delete(key), 60_000);
+  setTimeout(() => cache.delete(key), TTL_MS);
   return p;
 }
 
-export function useHolders(mint: Address | null): Holders | null {
+export function useHolders(mint: Address | null, supply: bigint | null): Holders | null {
   const [holders, setHolders] = useState<Holders | null>(null);
   useEffect(() => {
-    if (!mint) return;
+    if (!mint || supply === null) return;
     let cancelled = false;
-    void load(mint).then((h) => {
+    void load(mint, supply).then((h) => {
       if (!cancelled && h) setHolders(h);
     });
     return () => {
       cancelled = true;
     };
-  }, [mint]);
+  }, [mint, supply]);
   return holders;
 }

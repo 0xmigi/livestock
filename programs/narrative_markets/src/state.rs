@@ -68,7 +68,7 @@ const HEADER: usize = 2;
 pub enum Status {
     /// Curve trading is open until `expiry_ts`.
     Live = 0,
-    /// Trading is over; `redeem` is the only action.
+    /// Trading is over; `convert` and `redeem` are the only actions.
     Expired = 1,
     /// Every token has been redeemed.
     Settled = 2,

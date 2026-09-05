@@ -15,6 +15,8 @@ import { rpc } from "./config";
 
 export type TokenMeta = {
   uri: string;
+  /** The mint's permanent delegate. When it is the narrative, holders are paid out at expiry without signing. */
+  permanentDelegate?: Address;
   image?: string;
   description?: string;
   website?: string;
@@ -28,7 +30,8 @@ async function fetchJson(uri: string): Promise<Partial<TokenMeta>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 6_000);
   try {
-    const response = await fetch(uri, { signal: controller.signal });
+    // Metadata can be edited in place, so never trust a cached copy.
+    const response = await fetch(uri, { signal: controller.signal, cache: "no-store" });
     if (!response.ok) return {};
     const body: unknown = await response.json();
     if (typeof body !== "object" || body === null) return {};
@@ -51,6 +54,11 @@ async function fetchJson(uri: string): Promise<Partial<TokenMeta>> {
   }
 }
 
+/** Forgets a mint's metadata so the next read fetches it again. */
+export function invalidateTokenMeta(mint: Address): void {
+  cache.delete(mint);
+}
+
 /** Reads metadata for a batch of narrative mints. Missing entries are null. */
 export async function fetchTokenMeta(
   mints: Address[],
@@ -69,8 +77,11 @@ export async function fetchTokenMeta(
           const extensions = unwrapOption(account.data.extensions) ?? [];
           const meta = extensions.find((e) => e.__kind === "TokenMetadata");
           if (!meta || meta.__kind !== "TokenMetadata" || !meta.uri) return null;
-          if (!/^https?:\/\//.test(meta.uri)) return { uri: meta.uri };
-          return { uri: meta.uri, ...(await fetchJson(meta.uri)) };
+          const delegate = extensions.find((e) => e.__kind === "PermanentDelegate");
+          const permanentDelegate =
+            delegate?.__kind === "PermanentDelegate" ? (delegate.delegate as Address) : undefined;
+          if (!/^https?:\/\//.test(meta.uri)) return { uri: meta.uri, permanentDelegate };
+          return { uri: meta.uri, permanentDelegate, ...(await fetchJson(meta.uri)) };
         }),
       );
     }

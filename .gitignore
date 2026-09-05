@@ -25,3 +25,6 @@ test-ledger/
 # OS
 .DS_Store
 client/dist/
+
+# Local uploads when no Blob token is set
+.uploads/

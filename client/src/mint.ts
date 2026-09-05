@@ -10,6 +10,8 @@
  *   - zero decimals (see `curve` for why)
  *   - no freeze authority
  *   - mint authority already handed to the narrative PDA
+ *   - the narrative PDA as permanent delegate, so every holder can be paid
+ *     out at expiry without signing
  *
  * The mint is a plain keypair, not a PDA, which is what lets a creator grind a
  * vanity address the way every launchpad does.
@@ -21,6 +23,7 @@ import {
   extension,
   getInitializeMetadataPointerInstruction,
   getInitializeMint2Instruction,
+  getInitializePermanentDelegateInstruction,
   getInitializeTokenMetadataInstruction,
   getMintSize,
   getSetAuthorityInstruction,
@@ -29,6 +32,8 @@ import {
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
 
 import { NARRATIVE_DECIMALS } from "./curve.ts";
+
+const NULL_ADDRESS = "11111111111111111111111111111111" as Address;
 
 export type NarrativeMintInput = {
   /** Pays rent. Also the transient mint authority while metadata is written. */
@@ -59,6 +64,8 @@ export function getNarrativeMintSize(
 ): { allocate: number; fundFor: number } {
   const allocate = Number(
     getMintSize([
+      // The delegate is a fixed-size key; whose it is does not change the size.
+      extension("PermanentDelegate", { delegate: NULL_ADDRESS }),
       extension("MetadataPointer", {
         authority: null,
         metadataAddress: null,
@@ -95,6 +102,13 @@ export function getCreateNarrativeMintInstructions(
       lamports,
       space: BigInt(allocate),
       programAddress: TOKEN_2022_PROGRAM_ADDRESS,
+    }),
+
+    // The narrative may burn any holder's tokens: that is how `convert` pays
+    // everyone out at expiry. The program refuses any other delegate.
+    getInitializePermanentDelegateInstruction({
+      mint: mint.address,
+      delegate: narrative,
     }),
 
     // Points at the mint itself — the metadata lives in the mint account.

@@ -41,6 +41,21 @@ pub const SELL_TAX_BPS: u16 = 1_000; // 10%
 pub const HOUR: i64 = 3_600;
 pub const DURATION: i64 = 24 * HOUR;
 
+/// Who a narrative mint names as permanent delegate.
+#[derive(Clone, Copy)]
+pub enum Delegate {
+    /// The narrative PDA — what the program requires.
+    Narrative,
+    /// Nobody: an old-style mint.
+    None,
+    /// Some other key: a mint that could seize holders' tokens.
+    Other(Address),
+}
+
+/// Base mint, padding to the token account length, the account-type byte,
+/// and one 32-byte extension with its 4-byte TLV header.
+pub const MINT_WITH_DELEGATE_LEN: usize = 165 + 1 + 4 + 32;
+
 pub struct Env {
     pub svm: LiteSVM,
     pub creator: Keypair,
@@ -94,7 +109,7 @@ impl Env {
     /// The real client also initialises the metadata extensions here; the
     /// program does not inspect those, so tests use a bare mint.
     pub fn create_narrative_mint(&mut self) -> (Address, Address) {
-        self.create_narrative_mint_with(None, None, None)
+        self.create_narrative_mint_with(None, None, None, Delegate::Narrative)
     }
 
     /// The same, but lets a test hand over a deliberately wrong mint:
@@ -104,22 +119,41 @@ impl Env {
         authority_override: Option<Address>,
         freeze_authority: Option<Address>,
         decimals_override: Option<u8>,
+        delegate: Delegate,
     ) -> (Address, Address) {
         let mint = Keypair::new();
         let narrative = Self::narrative_for(&mint.pubkey());
         let authority = authority_override.unwrap_or(narrative);
         let decimals = decimals_override.unwrap_or(0);
 
-        let rent = self.svm.minimum_balance_for_rent_exemption(MINT_LEN);
+        let delegate = match delegate {
+            Delegate::Narrative => Some(narrative),
+            Delegate::Other(key) => Some(key),
+            Delegate::None => None,
+        };
+        // A mint with the extension is padded to the token account length,
+        // then carries one type byte and the TLV entry (type, length, key).
+        let space = if delegate.is_some() { MINT_WITH_DELEGATE_LEN } else { MINT_LEN };
+        let rent = self.svm.minimum_balance_for_rent_exemption(space);
         let creator_key = self.creator.pubkey();
 
         let create = solana_system_interface::instruction::create_account(
             &creator_key,
             &mint.pubkey(),
             rent,
-            MINT_LEN as u64,
+            space as u64,
             &NARRATIVE_TOKEN_PROGRAM,
         );
+        let mut ixs = vec![create];
+        if let Some(delegate) = delegate {
+            let mut data = vec![35u8]; // InitializePermanentDelegate
+            data.extend_from_slice(delegate.as_ref());
+            ixs.push(Instruction {
+                program_id: NARRATIVE_TOKEN_PROGRAM,
+                accounts: vec![AccountMeta::new(mint.pubkey(), false)],
+                data,
+            });
+        }
         let mut data = vec![20u8, decimals]; // InitializeMint2
         data.extend_from_slice(authority.as_ref());
         match freeze_authority {
@@ -129,14 +163,14 @@ impl Env {
             }
             None => data.push(0),
         }
-        let init = Instruction {
+        ixs.push(Instruction {
             program_id: NARRATIVE_TOKEN_PROGRAM,
             accounts: vec![AccountMeta::new(mint.pubkey(), false)],
             data,
-        };
+        });
 
         let creator = self.creator.insecure_clone();
-        self.send(&[create, init], &[&creator, &mint])
+        self.send(&ixs, &[&creator, &mint])
             .expect("create narrative mint");
         (mint.pubkey(), narrative)
     }
@@ -407,6 +441,32 @@ pub fn expire_ix(
             AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
         ],
         data: vec![3u8],
+    }
+}
+
+/// Permissionless: no signer among the accounts, the fee payer is whoever
+/// sends the transaction.
+pub fn convert_ix(
+    env: &Env,
+    narrative_mint: &Address,
+    holder_tokens: &Address,
+    holder_stock: &Address,
+    narrative: &Address,
+    vault: &Address,
+) -> Instruction {
+    Instruction {
+        program_id: narrative_markets::ID,
+        accounts: vec![
+            AccountMeta::new(*narrative, false),
+            AccountMeta::new(*narrative_mint, false),
+            AccountMeta::new(*holder_tokens, false),
+            AccountMeta::new(*holder_stock, false),
+            AccountMeta::new(*vault, false),
+            AccountMeta::new_readonly(env.stock_mint, false),
+            AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(env.stock_program, false),
+        ],
+        data: vec![5u8],
     }
 }
 

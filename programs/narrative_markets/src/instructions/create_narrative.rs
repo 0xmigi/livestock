@@ -21,9 +21,12 @@
 //! program computes that correctly.
 //!
 //! What the program will not take on trust: the mint must be Token-2022, have
-//! zero decimals, have **no supply yet**, carry **no freeze authority**, and
-//! have already handed its **mint authority to this narrative's PDA**. Without
-//! that last check anyone could keep minting beside the curve.
+//! zero decimals, have **no supply yet**, carry **no freeze authority**, have
+//! already handed its **mint authority to this narrative's PDA**, and name that
+//! same PDA as its **permanent delegate**. Without the authority check anyone
+//! could keep minting beside the curve; without the delegate, `convert` could
+//! not pay holders out at expiry — and a delegate that was anyone else could
+//! seize their tokens.
 
 use {
     crate::{error::MarketError, state::*, utils::*},
@@ -134,6 +137,12 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
         }
         // Only this narrative may mint. Without this the curve means nothing.
         if mint.mint_authority != Some(narrative_key) {
+            return Err(MarketError::BadParameters.into());
+        }
+        // And only this narrative may burn on holders' behalf: that is how
+        // every holder is paid out at expiry without signing. Anyone else as
+        // delegate could take holders' tokens, so nothing else is accepted.
+        if mint_permanent_delegate(narrative_mint)? != Some(narrative_key) {
             return Err(MarketError::BadParameters.into());
         }
 

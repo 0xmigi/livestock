@@ -13,6 +13,7 @@
 import {
   appendTransactionMessageInstructions,
   compileTransaction,
+  compressTransactionMessageUsingAddressLookupTables,
   createTransactionMessage,
   getBase64Decoder,
   getTransactionEncoder,
@@ -23,24 +24,42 @@ import {
   type Address,
   type Instruction,
   type KeyPairSigner,
+  type SignatureBytes,
+  type Transaction,
 } from "@solana/kit";
 import { describeTransactionError } from "@nm/client";
 
 import { rpc } from "./config";
 
 /**
+ * A co-signer that lives somewhere else — the devnet faucet, on the server.
+ * It is handed the compiled message and returns its 64-byte signature.
+ */
+export type RemoteSigner = {
+  address: Address;
+  sign: (messageBytes: Uint8Array) => Promise<Uint8Array>;
+};
+
+export type BuildOptions = {
+  /** Keypairs the browser holds, e.g. a freshly generated mint. */
+  localSigners?: KeyPairSigner[];
+  remoteSigners?: RemoteSigner[];
+  /** Address lookup tables, so a Jupiter route fits in one transaction. */
+  lookupTables?: Record<Address, Address[]>;
+};
+
+/**
  * Compiles instructions into wire bytes for `feePayer` to sign.
  *
- * `localSigners` are keypairs the browser holds — currently just a freshly
- * generated mint, which has to sign its own `CreateAccount`. They sign here
- * and Privy adds the fee payer's signature afterwards, so the transaction
- * reaches an RPC with both.
+ * Local and remote co-signers sign here and Privy adds the fee payer's
+ * signature afterwards, so the transaction reaches an RPC with all of them.
  */
 export async function buildTransaction(
   feePayer: Address,
   instructions: Instruction[],
-  localSigners: KeyPairSigner[] = [],
+  options: BuildOptions = {},
 ): Promise<Uint8Array> {
+  const { localSigners = [], remoteSigners = [], lookupTables = {} } = options;
   const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
 
   const message = pipe(
@@ -48,15 +67,27 @@ export async function buildTransaction(
     (m) => setTransactionMessageFeePayer(feePayer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
     (m) => appendTransactionMessageInstructions(instructions, m),
+    (m) =>
+      Object.keys(lookupTables).length > 0
+        ? compressTransactionMessageUsingAddressLookupTables(m, lookupTables)
+        : m,
   );
 
   const compiled = compileTransaction(message);
-  const signed = localSigners.length
+  let signed: Transaction = localSigners.length
     ? await partiallySignTransaction(
         localSigners.map((s) => s.keyPair),
         compiled,
       )
     : compiled;
+
+  for (const remote of remoteSigners) {
+    const signature = await remote.sign(new Uint8Array(signed.messageBytes));
+    signed = {
+      ...signed,
+      signatures: { ...signed.signatures, [remote.address]: signature as SignatureBytes },
+    };
+  }
 
   return new Uint8Array(getTransactionEncoder().encode(signed));
 }
@@ -92,10 +123,13 @@ class BlockhashExpired extends Error {
   }
 }
 
+/** JSON.stringify that survives bigints, which RPC error contexts carry. */
+function stringify(value: unknown): string {
+  return JSON.stringify(value, (_key, v) => (typeof v === "bigint" ? v.toString() : v));
+}
+
 function isBlockhashExpired(cause: unknown): boolean {
-  const serialized = JSON.stringify(
-    (cause as { context?: unknown })?.context ?? "",
-  );
+  const serialized = stringify((cause as { context?: unknown })?.context ?? "");
   return (
     /blockhash not found/i.test(serialized) ||
     /blockhash not found/i.test(
@@ -116,17 +150,13 @@ export async function signAndSend(
   feePayer: Address,
   instructions: Instruction[],
   sign: (transaction: Uint8Array) => Promise<Uint8Array>,
-  localSigners: KeyPairSigner[] = [],
+  options: BuildOptions = {},
 ): Promise<string> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     // Rebuilt each attempt, so a retry re-signs against a fresh blockhash.
-    const transaction = await buildTransaction(
-      feePayer,
-      instructions,
-      localSigners,
-    );
+    const transaction = await buildTransaction(feePayer, instructions, options);
     const signed = await sign(transaction);
     try {
       return await broadcast(signed);
@@ -174,7 +204,7 @@ async function confirm(signature: string, attempts = 40): Promise<void> {
     const status = value[0];
 
     if (status?.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
+      throw new Error(`Transaction failed: ${stringify(status.err)}`);
     }
     if (
       status?.confirmationStatus === "confirmed" ||

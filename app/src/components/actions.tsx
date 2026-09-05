@@ -8,13 +8,13 @@
  * are created idempotently in the same transaction, so there is never a
  * separate "set up your account" step.
  *
- * Payment is in the stock itself. On mainnet a Jupiter swap belongs at the
- * front of the buy transaction so the user can spend USDC and the program
- * still receives stock; that adapter is not wired yet, so the panel shows the
- * wallet's stock balance and quotes in dollars at the live price.
+ * A buy is paid in SOL. The transaction swaps it into the narrative's stock
+ * first (Jupiter on mainnet, the app's faucet on devnet — see src/lib/swap.ts)
+ * and the program's `buy` spends that stock, so the wallet never has to hold
+ * the stock itself. Selling pays out in the stock.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
 import {
   applyBps,
@@ -44,8 +44,14 @@ import {
   TOKEN_2022_PROGRAM,
 } from "@/lib/config";
 import type { NarrativeRow, Position } from "@/lib/narratives";
-import { signAndSend, toUserMessage } from "@/lib/tx";
+import { useSolPrice } from "@/lib/stocks";
+import { buildSwapLeg, LAMPORTS_PER_SOL, quoteSwap, type SwapQuote } from "@/lib/swap";
+import { signAndSend, toUserMessage, type BuildOptions } from "@/lib/tx";
 import { Button, Notice, Panel } from "./ui";
+import { refreshSolBalances, useSolBalance } from "./wallet";
+
+/** SOL kept back for fees and the token accounts a first buy creates. */
+const SOL_RESERVE = 0.01;
 
 type Props = {
   narrative: NarrativeRow;
@@ -63,7 +69,7 @@ function useAction(onDone: () => void) {
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
 
-  const run = async (owner: Address, instructions: Instruction[]) => {
+  const run = async (owner: Address, instructions: Instruction[], options: BuildOptions = {}) => {
     const wallet = wallets.find((w) => w.address === owner) ?? wallets[0];
     if (!wallet) {
       setError("No Solana wallet connected.");
@@ -75,16 +81,22 @@ function useAction(onDone: () => void) {
     setSignature(null);
 
     try {
-      const sig = await signAndSend(owner, instructions, async (transaction) => {
-        const { signedTransaction } = await signTransaction({
-          transaction,
-          wallet,
-          // Omitting this would silently sign for mainnet.
-          chain: SOLANA_CHAIN,
-        });
-        return signedTransaction;
-      });
+      const sig = await signAndSend(
+        owner,
+        instructions,
+        async (transaction) => {
+          const { signedTransaction } = await signTransaction({
+            transaction,
+            wallet,
+            // Omitting this would silently sign for mainnet.
+            chain: SOLANA_CHAIN,
+          });
+          return signedTransaction;
+        },
+        options,
+      );
       setSignature(sig);
+      refreshSolBalances();
       onDone();
     } catch (cause) {
       setError(toUserMessage(cause));
@@ -160,16 +172,50 @@ export function BuyPanel({
   const { run, busy, error, signature } = useAction(onDone);
 
   const stock = narrative.stock;
+  const swapStock = {
+    mint: narrative.stockMint,
+    decimals: stock.decimals,
+    tokenProgram: narrative.stockTokenProgram,
+  };
   const params = { basePrice: narrative.basePrice, slope: narrative.slope };
   const toUsd = (units: bigint) =>
     (Number(units) / 10 ** stock.decimals) * stockPrice;
 
+  const solUsd = useSolPrice();
+  const solBalance = useSolBalance(owner);
+
   const usd = Number.parseFloat(dollars);
-  const stockIn =
-    Number.isFinite(usd) && usd > 0 && stockPrice > 0
-      ? usdToStock(usd, stockPrice, stock.decimals)
+  const lamports =
+    Number.isFinite(usd) && usd > 0 && solUsd !== null && solUsd > 0
+      ? BigInt(Math.round((usd / solUsd) * Number(LAMPORTS_PER_SOL)))
       : 0n;
 
+  // The swap is quoted live, a beat after the amount settles.
+  const [quote, setQuote] = useState<SwapQuote | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  useEffect(() => {
+    setQuote(null);
+    setQuoteError(null);
+    if (lamports === 0n) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const next = await quoteSwap(swapStock, lamports);
+        if (!cancelled) setQuote(next);
+      } catch (cause) {
+        if (!cancelled) setQuoteError(cause instanceof Error ? cause.message : String(cause));
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // The stock is fixed per narrative; only the amount changes the quote.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lamports, narrative.stockMint]);
+
+  // Sized from the least the swap can deliver, so the buy cannot come up short.
+  const stockIn = quote?.minStockOut ?? (stockPrice > 0 ? usdToStock(usd || 0, stockPrice, stock.decimals) : 0n);
   const tokens = tokensForStock(
     narrative.supply,
     stockIn,
@@ -179,6 +225,7 @@ export function BuyPanel({
   const cost = tokens > 0n ? buyCost(narrative.supply, tokens, params) : 0n;
   const fee = applyBps(cost, narrative.feeBps);
   const maxIn = cost + fee;
+  const solIn = Number(lamports) / Number(LAMPORTS_PER_SOL);
 
   // Price impact: how far your own buy pushes the marginal price.
   const before = spotPrice(narrative.supply, params);
@@ -190,7 +237,8 @@ export function BuyPanel({
   const avgPerToken = tokens > 0n ? cost / tokens : 0n;
 
   const stockBalance = position?.stockBalance ?? 0n;
-  const insufficient = tokens > 0n && stockBalance < maxIn;
+  const insufficient =
+    lamports > 0n && solBalance !== null && solBalance < solIn + SOL_RESERVE;
 
   const held = position?.tokens ?? 0n;
   const sellAll = held > 0n && held <= narrative.supply;
@@ -202,6 +250,7 @@ export function BuyPanel({
     : 0n;
 
   const buy = async () => {
+    if (!quote) return;
     const program = narrative.stockTokenProgram;
     const stockAta = await ataFor(narrative.stockMint, owner, program);
     const tokenAta = await ataFor(
@@ -211,7 +260,11 @@ export function BuyPanel({
     );
     const creatorFee = await ataFor(narrative.stockMint, narrative.creator, program);
 
+    // The swap runs first; whatever it delivers above `maxIn` stays in the wallet.
+    const swap = await buildSwapLeg(swapStock, owner, quote);
+
     await run(owner, [
+      ...swap.instructions,
       getCreateAssociatedTokenIdempotentInstruction({
         payer: createNoopSigner(owner),
         ata: tokenAta,
@@ -239,7 +292,7 @@ export function BuyPanel({
         tokensOut: tokens,
         maxStockIn: maxIn,
       }),
-    ]);
+    ], { remoteSigners: swap.remoteSigners, lookupTables: swap.lookupTables });
   };
 
   const sell = async () => {
@@ -274,7 +327,9 @@ export function BuyPanel({
     ]);
   };
 
-  const availableUsd = toUsd(stockBalance);
+  // Spendable SOL in dollars, with the reserve held back.
+  const availableUsd =
+    solBalance !== null && solUsd !== null ? Math.max(0, solBalance - SOL_RESERVE) * solUsd : 0;
   const setMax = () =>
     setDollars(availableUsd > 0 ? (Math.floor(availableUsd * 100) / 100).toString() : "0");
 
@@ -326,9 +381,12 @@ export function BuyPanel({
               />
             </div>
             <div className="mono text-xs text-neutral-400">
-              {tokens > 0n ? (
+              {lamports > 0n && !quote && !quoteError ? (
+                "Quoting…"
+              ) : tokens > 0n ? (
                 <>
-                  ≈ <span className="numeric">{tokens.toLocaleString()}</span> {narrative.symbol}
+                  ≈ <span className="numeric">{tokens.toLocaleString()}</span> {narrative.symbol} for{" "}
+                  <span className="numeric">{solIn.toFixed(solIn < 0.01 ? 5 : 3)}</span> SOL
                 </>
               ) : (
                 "Enter an amount"
@@ -362,9 +420,9 @@ export function BuyPanel({
 
           <div className="mono flex items-center justify-between text-xs text-neutral-400">
             <span>
-              {stockPrice > 0
-                ? `${formatUsd(availableUsd)} available`
-                : `${formatStock(stockBalance, stock.decimals, 2)} ${stock.symbol} available`}
+              {solBalance === null
+                ? "…"
+                : `${solBalance.toFixed(3)} SOL${solUsd ? ` · ${formatUsd(availableUsd)}` : ""} available`}
             </span>
             {tokens > 0n ? (
               <button
@@ -383,6 +441,12 @@ export function BuyPanel({
                 {tokens.toLocaleString()} {narrative.symbol}
               </Line>
               <Line label="You pay">
+                {solIn.toFixed(solIn < 0.01 ? 5 : 4)} SOL
+              </Line>
+              <Line label={quote?.route === "jupiter" ? "Swapped via Jupiter" : "Swapped into"}>
+                ≈ {formatStock(quote?.stockOut ?? 0n, stock.decimals, 4)} {stock.symbol}
+              </Line>
+              <Line label="Spent on the curve">
                 {formatStock(maxIn, stock.decimals, 6)} {stock.symbol}
               </Line>
               <Line label="Average per token">{formatUsdAuto(toUsd(avgPerToken))}</Line>
@@ -394,16 +458,20 @@ export function BuyPanel({
                   +{impactPct.toFixed(impactPct < 1 ? 2 : 1)}%
                 </span>
               </Line>
-              <Line label="Available">
-                {formatStock(stockBalance, stock.decimals, 4)} {stock.symbol}
-              </Line>
+              {stockBalance > 0n ? (
+                <Line label={`${stock.symbol} already held`}>
+                  {formatStock(stockBalance, stock.decimals, 4)} {stock.symbol}
+                </Line>
+              ) : null}
             </div>
           ) : null}
 
-          {insufficient ? (
+          {quoteError ? (
+            <Notice kind="error">{quoteError}</Notice>
+          ) : insufficient ? (
             <Notice kind="warning">
-              You need {formatStock(maxIn, stock.decimals, 4)} {stock.symbol} in
-              this wallet for that buy. Lower the amount or top up {stock.symbol}.
+              That is more SOL than this wallet holds, after keeping{" "}
+              {SOL_RESERVE} SOL for fees. Lower the amount or top up.
             </Notice>
           ) : tokens === 0n && stockIn > 0n ? (
             <p className="text-sm text-neutral-400">
@@ -416,7 +484,7 @@ export function BuyPanel({
           <Button
             onClick={buy}
             variant="buy"
-            disabled={busy || tokens === 0n || insufficient}
+            disabled={busy || tokens === 0n || insufficient || !quote}
             className="w-full"
             size="lg"
           >
@@ -472,7 +540,11 @@ export function RedeemPanel({
   owner,
   stockPrice,
   onDone,
-}: Props) {
+  compact = false,
+}: Props & {
+  /** Under an automatic payout: just the fallback button. */
+  compact?: boolean;
+}) {
   const { run, busy, error, signature } = useAction(onDone);
   const held = position?.tokens ?? 0n;
   const stock = narrative.stock;
@@ -509,6 +581,17 @@ export function RedeemPanel({
       }),
     ]);
   };
+
+  if (compact) {
+    return (
+      <div className="space-y-3">
+        <Button onClick={redeem} variant="ghost" disabled={busy} className="w-full" size="sm">
+          {busy ? "Converting…" : "Not seeing it? Convert now"}
+        </Button>
+        <Result error={error} signature={signature} />
+      </div>
+    );
+  }
 
   if (held === 0n) {
     return (

@@ -146,8 +146,16 @@ want to.
 This also keeps the program self-contained — no Jupiter CPI, no external program
 risk, fully testable in LiteSVM.
 
-> **Status:** the Jupiter leg is not wired yet. The current build pays in the
-> stock directly and quotes the buy in dollars at the live stock price. See §14.
+> **Status:** wired, with SOL as the input. The buy panel quotes the swap
+> live, sizes the buy from the least the swap can deliver, and puts the swap
+> instructions in front of `buy` in one transaction (`app/src/lib/swap.ts`).
+> On mainnet the swap is Jupiter's best route; that path is written to the
+> swap API's documented shapes and has not yet been run against a funded
+> wallet. On devnet, where tokenized stocks do not exist, the app's **faucet
+> wallet** plays the counterparty: it holds every stand-in stock, sells it at
+> the live Tokens API rate, and co-signs the buyer's transaction from the
+> server after checking it is exactly "SOL in, one stock out at the quote"
+> (`/api/devnet/swap`). Exercised end to end by `scripts/src/swap-buy.ts`.
 
 ---
 
@@ -408,13 +416,21 @@ off-white ink, hairline borders, inverse solid buttons and 4px corners.
   "action" the way a green one would say "buy".
 - **The time bar is the signature element.** Every narrative carries a thin
   teal bar of how much of its life has elapsed.
-- **Stocks are first-class.** Logos and company names come from Jupiter's
-  token list, by mint and then by symbol. Every "converts to" carries the
-  logo. The filter is a dropdown, never a strip or a row of pills.
+- **Stocks are first-class.** The registry, logos, company names and prices
+  come from the Tokens API (tokens.xyz), which lists every tokenized equity
+  on Solana. Every "converts to" carries the logo. The filter is a dropdown,
+  never a strip or a row of pills.
 - **One container, `max-w-5xl`, on every page**, header included, header
   identical everywhere. Wide pages use two columns.
 
 Charts are deliberately absent.
+
+The hero's right-hand card is proof rather than pitch: the week's best
+completed narrative trade, replayed from chain history by `/api/highlight`
+and shown in shares — what the wallet paid in the stock, what it received
+when it sold or was converted, against the same stock held outright. Only a
+trade that came out ahead qualifies; until one exists the card shows the
+tally instead.
 
 ### Screens
 
@@ -446,7 +462,7 @@ description or links.
 bar pinned to the bottom that carries the running summary and the one action.
 Stock (cards with logo and price; skipped when only one is registered) →
 Story (live preview card, name, ticker, image, description, links) → Date
-(1 week / 2 weeks / 1 month as cards with the resulting date, the collapsed
+(1 hour up to 2 weeks as cards with the resulting date, the collapsed
 price-curve card) → Review (preview, a Terms grid, Launch). One transaction
 builds the mint, the vault and the narrative.
 
@@ -460,7 +476,7 @@ URI off the mint's `TokenMetadata` extension and caches the JSON per session.
 
 ### Copy
 
-> Buy the story. When it expires, you get the stock.
+> Buy the narrative. When it expires, you get the stock.
 
 ---
 
@@ -500,19 +516,24 @@ The app is configured entirely through public environment variables:
 ```
 NEXT_PUBLIC_CLUSTER=devnet|mainnet
 NEXT_PUBLIC_RPC_URL / NEXT_PUBLIC_WS_URL
-NEXT_PUBLIC_STOCKS="TSLAx:<mint>:8:250,NVDAx:<mint>:8:120"   # SYMBOL:mint[:decimals[:fallbackUsd]]
+NEXT_PUBLIC_STOCKS="TSLAx:<mint>:8:250,NVDAx:<mint>:8:120"   # pins: SYMBOL:mint[:decimals[:fallbackUsd]]
 NEXT_PUBLIC_PRIVY_APP_ID
+TOKENS_API_KEY                                               # server-side, for /api/stocks
+DEVNET_FAUCET_KEYPAIR                                        # server-side, devnet only: the swap counterparty
 BLOB_READ_WRITE_TOKEN                                        # server-side, for /api/upload
 ```
 
-`NEXT_PUBLIC_STOCKS` is the stock registry: it drives the picker on Create,
-the grouping and chips on Markets, and the price lookups (Jupiter price API,
-by mint). The older single-stock variables still work as a one-entry registry.
+The stock registry is the Tokens API's curated stock and ETF lists, read
+through `/api/stocks` and refreshed every minute: it drives the picker on
+Create (searchable, deepest markets first), the filter on Markets, and every
+logo, name and price. `NEXT_PUBLIC_STOCKS` pins a symbol to a mint over that
+list; the older single-stock variables still work as a one-entry pin.
 
 Mock stock mints exist **only inside the test suite**, where LiteSVM controls
 the clock and lets the whole lifecycle run in milliseconds. On devnet, where
-xStocks do not exist, the registry points at a stand-in mint; the program and
-client are identical to mainnet and only the addresses change.
+xStocks do not exist, a pin points each of the ten seeded symbols at a
+stand-in mint and the rest of the catalogue shows as mainnet-only; the program
+and client are identical to mainnet and only the addresses change.
 
 ---
 
@@ -536,21 +557,24 @@ client are identical to mainnet and only the addresses change.
 1. Curve math + unit tests
 2. `create_narrative` (verifying a client-built Token-2022 mint), `buy`
 3. `expire` + freeze + authority revocation
-4. `redeem` + the dust sweep
+4. `redeem` + the dust sweep, and `convert`: the same payout for any holder
+   without their signature, through the mint's permanent delegate. A keeper
+   (`scripts/src/keeper.ts` locally, `/api/keeper` on a schedule in
+   production) expires narratives and pays every holder the moment the date
+   passes, so a holder never has to claim.
 5. Full LiteSVM suite — every row in §9's "closed by design" table, plus the
    whole lifecycle against a Token-2022 stock and the three mint rejections
 6. `sell` + the tax
 7. TypeScript client: PDAs, instructions, decoders with version check, the
    mint builder
-8. Devnet deployment and a seed script
+8. Devnet deployment, a seed script, and the keeper
 9. Frontend: Markets, narrative page, Create, upload route, Moment-style UI
 
 **Remaining**
 
-- **Jupiter leg of the buy** (§5): USDC in, stock to the program, one
-  signature. Until then buyers must hold the stock.
-- **Mainnet stock registry** with real xStocks mints, and a pressure test
-  against real pool depth.
+- **First mainnet buy through Jupiter** (§5): the leg is written and the
+  devnet faucet version runs; the Jupiter path needs a funded wallet to prove.
+- **Pressure test** of real xStocks pool depth on mainnet.
 - Vercel deployment (Blob token, Helius RPC, Privy production app).
 - A creator cost-basis figure on the narrative page (needs transaction
   history; holdings alone are shown today).

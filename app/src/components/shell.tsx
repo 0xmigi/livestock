@@ -4,7 +4,7 @@
  * Page frame. One container width everywhere, and a header that is identical
  * on every page, so nothing shifts when you navigate.
  *
- * Desktop: wordmark, then Create, theme and account on the right.
+ * Desktop: wordmark, then Create and account on the right.
  * Mobile: wordmark and account in the bar; Markets, Create and Account in a
  * floating tab bar at the bottom.
  */
@@ -15,10 +15,10 @@ import { usePathname } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { LineChart, Plus, UserRound } from "lucide-react";
 
-import { ThemeToggle } from "@/lib/theme";
 import { Wordmark } from "./logo";
+import { Wash } from "./wash";
 import { Button } from "./ui";
-import { AccountChip, AccountPanel, isActivePath, useOwner } from "./wallet";
+import { AccountChip, AccountMenu, isActivePath, useOwner } from "./wallet";
 
 export const CONTAINER = "mx-auto w-full max-w-5xl px-5 sm:px-8";
 
@@ -31,8 +31,9 @@ export function Shell({
   bottom?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col bg-ground">
-      <header className={`${CONTAINER} flex h-20 items-center justify-between gap-4`}>
+    <div className="ground flex min-h-screen flex-col">
+      <Wash />
+      <header className={`${CONTAINER} relative z-20 flex h-20 items-center justify-between gap-4`}>
         <Link href="/" className="shrink-0 transition-opacity hover:opacity-80">
           <Wordmark />
         </Link>
@@ -43,12 +44,11 @@ export function Shell({
               Create
             </Button>
           </Link>
-          <ThemeToggle />
           <AccountChip />
         </div>
       </header>
 
-      <main className={`${CONTAINER} flex-1 pb-32 pt-4 sm:pb-28 sm:pt-8`}>{children}</main>
+      <main className={`${CONTAINER} relative z-[1] flex-1 pb-32 pt-4 sm:pb-28 sm:pt-8`}>{children}</main>
 
       {bottom ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 sm:bottom-6">
@@ -94,7 +94,7 @@ function TabBar() {
           {authenticated && owner ? "Account" : "Log in"}
         </button>
       </nav>
-      {open && owner ? <AccountPanel owner={owner} onClose={() => setOpen(false)} /> : null}
+      {open && owner ? <AccountMenu owner={owner} onClose={() => setOpen(false)} placement="tabbar" /> : null}
     </>
   );
 }

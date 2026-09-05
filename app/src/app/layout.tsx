@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import { Providers } from "@/components/providers";
 import { APP_NAME, TAGLINE } from "@/lib/config";
-import { THEME_KEY } from "@/lib/theme";
 import "./globals.css";
 
 const geist = Geist({
@@ -37,9 +36,8 @@ export const viewport: Viewport = {
   ],
 };
 
-// Applies the saved theme before first paint so a light-mode user never sees
-// a dark flash. Dark is the default; only an explicit "light" is stored.
-const themeScript = `try{if(localStorage.getItem(${JSON.stringify(THEME_KEY)})==="light")document.documentElement.setAttribute("data-theme","light")}catch(e){}`;
+// Matches the OS colour scheme before first paint so nobody sees a flash.
+const themeScript = `try{if(matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.setAttribute("data-theme","light")}catch(e){}`;
 
 export default function RootLayout({
   children,

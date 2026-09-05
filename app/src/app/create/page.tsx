@@ -1,16 +1,16 @@
 "use client";
 
 /**
- * Create, as four short steps: the stock, the story, the date, then review.
+ * Create, as four short steps: the stock, the narrative, the date, then review.
  * Every step is a screen you can finish in seconds; the launch itself is one
  * transaction that builds the mint, the vault and the narrative.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
-import { ChevronLeft, ChevronRight, ImagePlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImagePlus, Search } from "lucide-react";
 import {
   findNarrative,
   findVault,
@@ -37,24 +37,38 @@ import {
 } from "@/components/ui";
 import { useOwner } from "@/components/wallet";
 import {
-  DEFAULT_STOCK,
+  BIO_MAX_CHARS,
   formatUsd,
   formatUsdAuto,
   rpc,
   SOLANA_CHAIN,
-  STOCKS,
   type StockInfo,
 } from "@/lib/config";
 import { fetchStockTokenProgram, formatDate } from "@/lib/narratives";
-import { useStockMeta } from "@/lib/logos";
 import { useStockPrice } from "@/lib/price";
+import { matchesStock, useStocks } from "@/lib/stocks";
 import { signAndSend, toUserMessage } from "@/lib/tx";
 
+// From the program's one-hour minimum up to two weeks. Short ones exist so a
+// whole lifecycle can be walked through in an afternoon.
+//
+// The program measures the duration from when the transaction executes, not
+// from when the button was pressed, so every expiry gets a small head start:
+// without it "1 hour" lands a few seconds under the minimum and is rejected.
+const LEAD_SECS = 120;
+
 const DURATIONS = [
+  { label: "1 hour", secs: 3600 },
+  { label: "4 hours", secs: 4 * 3600 },
+  { label: "1 day", secs: 24 * 3600 },
+  { label: "3 days", secs: 3 * 24 * 3600 },
   { label: "1 week", secs: 7 * 24 * 3600 },
   { label: "2 weeks", secs: 14 * 24 * 3600 },
-  { label: "1 month", secs: 30 * 24 * 3600 },
 ];
+
+/** How many stocks the picker shows before a search narrows it. */
+const PICKER_DEFAULT = 12;
+const PICKER_MATCHES = 24;
 
 /** 10% is the dial that decides whether people hold to expiry. */
 const SELL_TAX_BPS = 1_000;
@@ -81,7 +95,7 @@ function classifySource(raw: string): { website: string; twitter: string; telegr
 type Step = "stock" | "story" | "date" | "review";
 const STEPS: { id: Step; label: string }[] = [
   { id: "stock", label: "Stock" },
-  { id: "story", label: "Story" },
+  { id: "story", label: "Narrative" },
   { id: "date", label: "Date" },
   { id: "review", label: "Review" },
 ];
@@ -95,15 +109,34 @@ export default function Create() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>("stock");
-  const [stock, setStock] = useState<StockInfo | null>(DEFAULT_STOCK);
+  const { stocks, loaded: stocksLoaded, error: stocksError } = useStocks();
+  const [stock, setStock] = useState<StockInfo | null>(null);
+  const [stockQuery, setStockQuery] = useState("");
   const { price, isLive } = useStockPrice(stock?.mint);
+
+  // The first usable stock is picked for you once the registry is in.
+  useEffect(() => {
+    if (stock) return;
+    const first = stocks.find((s) => s.available);
+    if (first) setStock(first);
+  }, [stocks, stock]);
+
+  // The whole catalogue is searchable; a dozen of the deepest sit up front.
+  const pickerStocks = useMemo(() => {
+    const q = stockQuery.trim();
+    if (q) return stocks.filter((s) => matchesStock(s, q)).slice(0, PICKER_MATCHES);
+    const top = stocks.slice(0, PICKER_DEFAULT);
+    if (stock && !top.some((s) => s.mint === stock.mint)) top.unshift(stock);
+    return top;
+  }, [stocks, stockQuery, stock]);
 
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+  const [bio, setBio] = useState("");
   const [source, setSource] = useState("");
-  const [duration, setDuration] = useState(DURATIONS[1].secs);
+  const [duration, setDuration] = useState(DURATIONS[2].secs);
   const [showCurve, setShowCurve] = useState(false);
 
   const [busy, setBusy] = useState(false);
@@ -127,7 +160,7 @@ export default function Create() {
     symbol.length <= 10;
   const valid = stock !== null && storyValid && basePrice > 0n && slope > 0n;
 
-  const expiryPreview = Math.floor(Date.now() / 1000) + duration;
+  const expiryPreview = Math.floor(Date.now() / 1000) + duration + LEAD_SECS;
   const index = STEPS.findIndex((s) => s.id === step);
   const prev = STEPS[index - 1] ?? null;
   const next = STEPS[index + 1] ?? null;
@@ -165,7 +198,7 @@ export default function Create() {
       form.set("symbol", cleanSymbol);
       // One source link; which kind it is can be told from the host.
       const links = classifySource(source);
-      form.set("description", "");
+      form.set("description", bio.trim());
       form.set("website", links.website);
       form.set("twitter", links.twitter);
       form.set("telegram", links.telegram);
@@ -188,7 +221,7 @@ export default function Create() {
       const { fundFor } = getNarrativeMintSize(cleanName, cleanSymbol, uploaded.uri);
       const lamports = await rpc.getMinimumBalanceForRentExemption(BigInt(fundFor)).send();
 
-      const expiryTs = BigInt(Math.floor(Date.now() / 1000) + duration);
+      const expiryTs = BigInt(Math.floor(Date.now() / 1000) + duration + LEAD_SECS);
 
       setProgress("Confirm in your wallet");
       await signAndSend(
@@ -237,7 +270,7 @@ export default function Create() {
           return signedTransaction;
         },
         // The mint signs its own CreateAccount; Privy adds the fee payer.
-        [mint],
+        { localSigners: [mint] },
       );
 
       router.push(`/n/${narrative}`);
@@ -277,7 +310,7 @@ export default function Create() {
           : step === "story"
             ? name.trim()
               ? `${name.trim()} · $${symbol || "TICKER"}`
-              : "Name the story"
+              : "Name the narrative"
             : step === "date"
               ? `Converts on ${formatDate(expiryPreview)}`
               : busy
@@ -347,11 +380,8 @@ export default function Create() {
           </div>
         </div>
 
-        {STOCKS.length === 0 ? (
-          <Notice kind="error">
-            Set <code>NEXT_PUBLIC_STOCKS</code> or <code>NEXT_PUBLIC_STOCK_MINT</code>{" "}
-            before creating.
-          </Notice>
+        {stocksLoaded && stocks.length === 0 ? (
+          <Notice kind="error">{stocksError ?? "No stocks are listed right now."}</Notice>
         ) : null}
 
         {step === "stock" ? (
@@ -362,11 +392,28 @@ export default function Create() {
                 Every buy is paid in it and every token turns back into it on the date.
               </p>
             </header>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-              {STOCKS.map((s) => (
-                <StockOption key={s.mint} stock={s} active={stock?.mint === s.mint} onPick={() => setStock(s)} />
-              ))}
-            </div>
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <input
+                value={stockQuery}
+                onChange={(e) => setStockQuery(e.target.value)}
+                placeholder={stocks.length > 0 ? `Search ${stocks.length} stocks` : "Search stocks"}
+                className={`${inputClass} pl-9`}
+                aria-label="Search stocks"
+                autoFocus
+              />
+            </label>
+            {pickerStocks.length === 0 ? (
+              <p className="text-sm text-neutral-400">
+                {stocksLoaded ? "Nothing matches." : "Loading the stock list."}
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                {pickerStocks.map((s) => (
+                  <StockOption key={s.mint} stock={s} active={stock?.mint === s.mint} onPick={() => setStock(s)} />
+                ))}
+              </div>
+            )}
             {action}
           </section>
         ) : null}
@@ -374,7 +421,7 @@ export default function Create() {
         {step === "story" ? (
           <section className="space-y-6">
             <header>
-              <h1 className="display text-2xl text-neutral-900">Name the story</h1>
+              <h1 className="display text-2xl text-neutral-900">Name the narrative</h1>
               <p className="mt-2 text-[15px] text-neutral-400">
                 One thing you think {stock ? stock.symbol.replace(/x$/i, "") : "the company"} is about
                 to do. This is how it shows up everywhere.
@@ -402,6 +449,25 @@ export default function Create() {
                 />
               </Field>
             </div>
+
+            <Field
+              label="Bio"
+              optional
+              hint={
+                <span className={bio.length >= BIO_MAX_CHARS ? "text-neutral-900" : undefined}>
+                  {bio.length}/{BIO_MAX_CHARS}
+                </span>
+              }
+            >
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value.slice(0, BIO_MAX_CHARS))}
+                maxLength={BIO_MAX_CHARS}
+                rows={3}
+                className={`${inputClass} resize-none`}
+                placeholder="What is the narrative, and why now?"
+              />
+            </Field>
 
             <Field label="Image" hint="PNG, JPEG, WebP or GIF up to 4MB. This is what wallets and feeds show.">
               <div className="flex items-center gap-4">
@@ -467,7 +533,7 @@ export default function Create() {
             <div className="grid grid-cols-3 gap-3">
               {DURATIONS.map((d) => {
                 const on = duration === d.secs;
-                const when = Math.floor(Date.now() / 1000) + d.secs;
+                const when = Math.floor(Date.now() / 1000) + d.secs + LEAD_SECS;
                 return (
                   <button
                     key={d.label}
@@ -548,7 +614,7 @@ export default function Create() {
 
             {!storyValid ? (
               <Notice kind="warning">
-                The story step still needs {!image ? "an image" : "a name and ticker"}.
+                The narrative step still needs {!image ? "an image" : "a name and ticker"}.
               </Notice>
             ) : null}
             {error ? <Notice kind="error">{error}</Notice> : null}
@@ -591,25 +657,29 @@ function StockOption({
   onPick: () => void;
 }) {
   const { price, isLive } = useStockPrice(stock.mint);
-  const meta = useStockMeta();
   return (
     <button
       type="button"
       onClick={onPick}
+      disabled={!stock.available}
       aria-pressed={active}
+      title={stock.available ? undefined : "Only on mainnet"}
       className={`flex flex-col items-start gap-3 rounded border p-4 text-left transition-colors ${
-        active ? "border-accent bg-neutral-100" : "border-neutral-200 bg-neutral-50 hover:border-neutral-300"
-      }`}
+        active
+          ? "border-accent bg-neutral-100"
+          : "border-neutral-200 bg-neutral-50 hover:border-neutral-300"
+      } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-neutral-200`}
     >
       <StockLogo stock={stock} size={36} />
       <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-neutral-900">
-          {meta[stock.mint]?.name ?? stock.symbol}
-        </span>
-        <span className="mono block text-xs text-neutral-400">
+        <span className="block truncate text-sm font-semibold text-neutral-900">{stock.name}</span>
+        <span className="mono block truncate text-xs text-neutral-400">
           {stock.symbol} · {price > 0 ? formatUsd(price) : "—"}
           {isLive ? "" : " est."}
         </span>
+        {stock.available ? null : (
+          <span className="mt-1 block text-[11px] text-neutral-400">Mainnet only</span>
+        )}
       </span>
     </button>
   );

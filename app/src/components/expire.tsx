@@ -22,10 +22,13 @@ export function ExpireButton({
   narrative,
   owner,
   onDone,
+  quiet = false,
 }: {
   narrative: NarrativeRow;
   owner: Address;
   onDone: () => void;
+  /** When the keeper is expected to settle: offer it as a fallback, not the main action. */
+  quiet?: boolean;
 }) {
   const { wallets } = useWallets();
   const { signTransaction } = useSignTransaction();
@@ -71,8 +74,14 @@ export function ExpireButton({
 
   return (
     <div className="space-y-3">
-      <Button onClick={settle} variant="accent" disabled={busy} className="w-full" size="lg">
-        {busy ? "Settling…" : "Settle this narrative"}
+      <Button
+        onClick={settle}
+        variant={quiet ? "ghost" : "accent"}
+        disabled={busy}
+        className="w-full"
+        size={quiet ? "sm" : "lg"}
+      >
+        {busy ? "Settling…" : quiet ? "Not seeing it? Settle now" : "Settle this narrative"}
       </Button>
       {error ? <Notice kind="error">{error}</Notice> : null}
     </div>

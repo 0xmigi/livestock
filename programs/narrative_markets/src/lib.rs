@@ -15,6 +15,9 @@
 //!    program PDA and is revoked at expiry.
 //! 5. The creator can never move stock out of the vault.
 //! 6. Redemption claims never expire.
+//! 7. At expiry every holder can be paid out without their signature: the
+//!    narrative is the mint's permanent delegate, and `convert` is
+//!    permissionless.
 
 #![allow(unexpected_cfgs)]
 
@@ -44,6 +47,7 @@ pub enum Instruction {
     Sell = 2,
     Expire = 3,
     Redeem = 4,
+    Convert = 5,
 }
 
 fn process_instruction(
@@ -67,6 +71,7 @@ fn process_instruction(
         x if x == Instruction::Sell as u8 => instructions::sell(accounts, data),
         x if x == Instruction::Expire as u8 => instructions::expire(accounts),
         x if x == Instruction::Redeem as u8 => instructions::redeem(accounts),
+        x if x == Instruction::Convert as u8 => instructions::convert(accounts),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }
