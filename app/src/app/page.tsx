@@ -10,6 +10,7 @@ import { Shell } from "@/components/shell";
 import { Thumb } from "@/components/thumb";
 import {
   Button,
+  Delta,
   EmptyState,
   Notice,
   phaseOf,
@@ -19,7 +20,8 @@ import {
   TimeBar,
   type Phase,
 } from "@/components/ui";
-import { formatUsd, STOCKS } from "@/lib/config";
+import { formatUsd, formatUsdAuto, STOCKS } from "@/lib/config";
+import { usePriceChange } from "@/lib/change";
 import { useStockMeta } from "@/lib/logos";
 import {
   formatCountdown,
@@ -52,10 +54,23 @@ function usdOf(n: NarrativeRow, units: bigint, prices: Record<string, number>): 
   return (Number(units) / 10 ** n.stock.decimals) * priceOf(n, prices);
 }
 
+/** What the next token costs, in dollars. */
+function tokenPriceOf(n: NarrativeRow, prices: Record<string, number>): number {
+  return usdOf(n, spotPrice(n.supply, n), prices);
+}
+
 /** Spot price times supply, the number every launchpad leads with. */
 function fdvOf(n: NarrativeRow, prices: Record<string, number>): number {
   const supply = n.status === 0 ? n.supply : n.finalSupply;
   return usdOf(n, spotPrice(n.supply, n) * supply, prices);
+}
+
+/** `3h ago`, `2d ago`. */
+function formatAgo(seconds: number): string {
+  const s = Math.max(0, seconds);
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86_400)}d ago`;
 }
 
 function compact(usd: number): string {
@@ -133,7 +148,7 @@ export default function Markets() {
               <span className="text-neutral-400">When it expires, you get the stock.</span>
             </h1>
             <Link href="/create" className="mt-7 inline-block">
-              <Button variant="primary" size="lg" className="flex items-center gap-2">
+              <Button variant="accent" size="lg" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" strokeWidth={2.5} />
                 Create a narrative
               </Button>
@@ -143,7 +158,7 @@ export default function Markets() {
           <div className="rounded border border-neutral-200 bg-neutral-50 p-5">
             <div className="text-sm text-neutral-400">Livestock so far</div>
             <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200">
-              <Stat label="narratives" value={rows ? String(stats.launched) : "—"} />
+              <Stat label="launched" value={rows ? String(stats.launched) : "—"} />
               <Stat label="combined FDV" value={rows ? compact(stats.fdv) : "—"} />
               <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
             </div>
@@ -213,7 +228,7 @@ export default function Markets() {
               action={
                 view === "live" && !query ? (
                   <Link href="/create">
-                    <Button variant="primary">Create a narrative</Button>
+                    <Button variant="accent">Create a narrative</Button>
                   </Link>
                 ) : null
               }
@@ -226,16 +241,16 @@ export default function Markets() {
               <div className="hidden sm:block">
                 <Table rows={shown} now={now} prices={prices} view={view} />
               </div>
-              <div className="flex items-center justify-between">
-                <p className="mono text-xs text-neutral-400">
-                  {shown.length} of {list.length}
-                </p>
-                {left > 0 ? (
+              {left > 0 ? (
+                <div className="flex items-center justify-between">
+                  <p className="mono text-xs text-neutral-400">
+                    {shown.length} of {list.length}
+                  </p>
                   <Button variant="outline" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
-                    Show {Math.min(PAGE, left)} more · {left} left
+                    Show {Math.min(PAGE, left)} more
                   </Button>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </>
           )}
         </section>
@@ -319,9 +334,18 @@ function Feature({
   }
   const remaining = secondsRemaining(n, now);
   const phase = phaseOf(n.status, remaining);
-  const figure = kind === "time" ? formatCountdown(remaining) : compact(fdvOf(n, prices));
+  const figure =
+    kind === "time"
+      ? formatCountdown(remaining)
+      : kind === "new"
+        ? formatAgo(now - Number(n.createdTs))
+        : compact(fdvOf(n, prices));
   const caption =
-    kind === "time" ? `into ${n.stock.symbol}` : kind === "fdv" ? "FDV" : `${formatCountdown(remaining)} left`;
+    kind === "time"
+      ? `${compact(fdvOf(n, prices))} FDV`
+      : kind === "new"
+        ? `${compact(fdvOf(n, prices))} FDV`
+        : `${formatUsdAuto(tokenPriceOf(n, prices))} per token`;
 
   return (
     <Link href={`/n/${n.address}`} className={`${frame} block transition-colors hover:border-neutral-300`}>
@@ -330,15 +354,9 @@ function Feature({
         <Thumb src={n.meta?.image} name={n.name} size={40} shape="square" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-semibold text-neutral-900">{n.name}</div>
-          <div className="mono flex min-w-0 items-center gap-1.5 text-xs text-neutral-400">
-            <StockLogo stock={n.stock} size={12} />
-            <span className="truncate">{n.stock.symbol}</span>
-          </div>
+          <div className="mono truncate text-xs text-neutral-400">{caption}</div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="mono text-base font-semibold text-neutral-900">{figure}</div>
-          <div className="mono text-[11px] text-neutral-400">{caption}</div>
-        </div>
+        <div className="mono shrink-0 text-base font-semibold text-neutral-900">{figure}</div>
       </div>
       <TimeBar createdTs={n.createdTs} expiryTs={n.expiryTs} now={now} phase={phase} className="mt-4" />
     </Link>
@@ -427,31 +445,23 @@ function MobileList({ rows, now, prices, view }: ListProps) {
         return (
           <Link key={n.address} href={`/n/${n.address}`} className="block px-4 py-3.5 active:bg-neutral-100">
             <div className="flex items-center gap-3">
-              <Thumb src={n.meta?.image} name={n.name} size={40} shape="square" />
+              <Thumb src={n.meta?.image} name={n.name} size={44} shape="square" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-semibold text-neutral-900">{n.name}</div>
-                <div className="mono mt-0.5 flex items-center gap-2 text-xs text-neutral-400">
-                  ${n.symbol}
-                  <span className="inline-flex items-center gap-1">
-                    <StockLogo stock={n.stock} size={12} />
-                    {n.stock.symbol}
-                  </span>
-                </div>
-              </div>
-              <div className="shrink-0 text-right">
-                <div className="mono text-[15px] font-semibold text-neutral-900">{compact(fdvOf(n, prices))}</div>
-                <div className="mono text-[11px] text-neutral-400">
+                <div className="mono mt-0.5 text-xs text-neutral-400">
                   {view === "live"
-                    ? `${formatCountdown(remaining)} left`
+                    ? `${compact(fdvOf(n, prices))} FDV · ${formatCountdown(remaining)}`
                     : phase === "settling"
                       ? "Settling"
                       : `${formatStock(perToken, n.stock.decimals, 4)} ${n.stock.symbol} each`}
                 </div>
               </div>
-            </div>
-            <TimeBar createdTs={n.createdTs} expiryTs={n.expiryTs} now={now} phase={phase} className="mt-3" />
-            <div className="mono mt-1.5 text-[11px] text-neutral-400">
-              vault {formatUsd(usdOf(n, backing, prices), 0)} · {formatDate(n.expiryTs)}
+              <div className="shrink-0 text-right">
+                <div className="mono text-[15px] font-semibold text-neutral-900">
+                  {view === "live" ? formatUsdAuto(tokenPriceOf(n, prices)) : formatUsd(usdOf(n, backing, prices), 0)}
+                </div>
+                {view === "live" ? <Change24h n={n} className="text-xs" /> : null}
+              </div>
             </div>
           </Link>
         );
@@ -471,8 +481,9 @@ function Table({ rows, now, prices, view }: ListProps) {
           <tr className="border-b border-neutral-200">
             <th className={th}>Narrative</th>
             <th className={th}>Converts to</th>
-            <th className={`${th} text-right`}>FDV</th>
-            <th className={`${th} hidden text-right md:table-cell`}>Vault</th>
+            {view === "live" ? <th className={`${th} text-right`}>Price</th> : null}
+            {view === "live" ? <th className={`${th} text-right`}>FDV</th> : null}
+            <th className={`${th} text-right md:table-cell`}>Vault</th>
             <th className={`${th} text-right`}>{view === "live" ? "Time left" : "Pays out"}</th>
           </tr>
         </thead>
@@ -495,30 +506,31 @@ function Table({ rows, now, prices, view }: ListProps) {
                     <span className="min-w-0">
                       <span className="block truncate text-[15px] font-semibold leading-tight text-neutral-900">{n.name}</span>
                       <span className="mono mt-0.5 flex items-center gap-2 text-xs text-neutral-400">
-                        ${n.symbol}
-                        <StatusDot phase={phase} />
+                        {n.symbol}
+                        {phase !== "live" ? <StatusDot phase={phase} /> : null}
                       </span>
                     </span>
                   </Link>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="flex items-center gap-2 text-sm">
+                  <span className="mono flex items-center gap-2 text-sm text-neutral-900" title={meta[n.stockMint]?.name}>
                     <StockLogo stock={n.stock} size={20} />
-                    <span className="min-w-0">
-                      <span className="mono block text-neutral-900">{n.stock.symbol}</span>
-                      <span className="block truncate text-xs text-neutral-400">{meta[n.stockMint]?.name ?? ""}</span>
-                    </span>
+                    {n.stock.symbol}
                   </span>
                 </td>
+                {view === "live" ? (
+                  <td className="mono px-4 py-3 text-right">
+                    <div className="text-sm font-semibold text-neutral-900">{formatUsdAuto(tokenPriceOf(n, prices))}</div>
+                    <Change24h n={n} className="text-[11px]" />
+                  </td>
+                ) : null}
+                {view === "live" ? (
+                  <td className="mono px-4 py-3 text-right">
+                    <div className="text-sm font-semibold text-neutral-900">{compact(fdvOf(n, prices))}</div>
+                  </td>
+                ) : null}
                 <td className="mono px-4 py-3 text-right">
-                  <div className="text-sm font-semibold text-neutral-900">{compact(fdvOf(n, prices))}</div>
-                  <div className="text-[11px] text-neutral-400">{n.supply.toLocaleString()} supply</div>
-                </td>
-                <td className="mono hidden px-4 py-3 text-right md:table-cell">
                   <div className="text-sm text-neutral-900">{formatUsd(usdOf(n, backing, prices), 0)}</div>
-                  <div className="text-[11px] text-neutral-400">
-                    {formatStock(backing, n.stock.decimals, 2)} {n.stock.symbol}
-                  </div>
                 </td>
                 <td className="mono px-4 py-3 text-right">
                   {view === "live" ? (
@@ -544,6 +556,12 @@ function Table({ rows, now, prices, view }: ListProps) {
       </table>
     </div>
   );
+}
+
+/** One row's 24h move; fetched lazily and cached. */
+function Change24h({ n, className = "" }: { n: NarrativeRow; className?: string }) {
+  const change = usePriceChange(n.address, n);
+  return <Delta pct={change?.pct ?? null} approx={change?.inStockTerms} className={className} />;
 }
 
 function Skeleton() {

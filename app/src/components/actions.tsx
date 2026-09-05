@@ -45,7 +45,7 @@ import {
 } from "@/lib/config";
 import type { NarrativeRow, Position } from "@/lib/narratives";
 import { signAndSend, toUserMessage } from "@/lib/tx";
-import { Button, Notice, Panel, Segmented } from "./ui";
+import { Button, Notice, Panel } from "./ui";
 
 type Props = {
   narrative: NarrativeRow;
@@ -136,10 +136,10 @@ function Line({
   strong?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 text-sm">
+    <div className="flex items-baseline justify-between gap-4 text-xs">
       <span className="text-neutral-400">{label}</span>
       <span
-        className={`numeric text-right ${strong ? "font-medium text-neutral-900" : "text-neutral-600"}`}
+        className={`mono text-right ${strong ? "font-medium text-neutral-900" : "text-neutral-600"}`}
       >
         {children}
       </span>
@@ -156,6 +156,7 @@ export function BuyPanel({
 }: Props) {
   const [dollars, setDollars] = useState("25");
   const [mode, setMode] = useState<"buy" | "sell">("buy");
+  const [details, setDetails] = useState(false);
   const { run, busy, error, signature } = useAction(onDone);
 
   const stock = narrative.stock;
@@ -278,24 +279,38 @@ export function BuyPanel({
     setDollars(availableUsd > 0 ? (Math.floor(availableUsd * 100) / 100).toString() : "0");
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {held > 0n ? (
-        <Segmented
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: "buy", label: "Buy" },
-            { value: "sell", label: "Sell" },
-          ]}
-        />
+        <div className="flex gap-5 border-b border-neutral-200 text-sm font-medium">
+          <button
+            type="button"
+            aria-pressed={mode === "buy"}
+            onClick={() => setMode("buy")}
+            className={`-mb-px border-b-2 pb-2 transition-colors ${
+              mode === "buy" ? "border-success text-success" : "border-transparent text-neutral-400 hover:text-neutral-900"
+            }`}
+          >
+            Buy
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === "sell"}
+            onClick={() => setMode("sell")}
+            className={`-mb-px border-b-2 pb-2 transition-colors ${
+              mode === "sell" ? "border-danger text-danger" : "border-transparent text-neutral-400 hover:text-neutral-900"
+            }`}
+          >
+            Sell
+          </button>
+        </div>
       ) : null}
 
       {mode === "buy" ? (
         <>
           {/* One big number, as on a trading app. */}
-          <label className="block rounded bg-neutral-50 px-5 py-5 focus-within:ring-2 focus-within:ring-neutral-200">
+          <label className="block rounded border border-neutral-200 bg-neutral-100 px-3.5 py-3 focus-within:border-neutral-400">
             <div className="flex items-baseline gap-1">
-              <span className="numeric text-4xl font-semibold text-neutral-300">
+              <span className="numeric text-2xl font-semibold text-neutral-400">
                 $
               </span>
               <input
@@ -305,16 +320,15 @@ export function BuyPanel({
                 inputMode="decimal"
                 value={dollars}
                 onChange={(e) => setDollars(e.target.value)}
-                className="numeric w-full bg-transparent text-4xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
+                className="numeric w-full bg-transparent text-2xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
                 placeholder="0"
                 aria-label="Amount in dollars"
               />
             </div>
-            <div className="mt-1 text-sm text-neutral-400">
+            <div className="mono text-xs text-neutral-400">
               {tokens > 0n ? (
                 <>
-                  ≈ <span className="numeric">{tokens.toLocaleString()}</span>{" "}
-                  ${narrative.symbol}
+                  ≈ <span className="numeric">{tokens.toLocaleString()}</span> {narrative.symbol}
                 </>
               ) : (
                 "Enter an amount"
@@ -322,13 +336,13 @@ export function BuyPanel({
             </div>
           </label>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {[10, 25, 50, 100].map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => setDollars(String(v))}
-                className={`numeric flex-1 rounded py-2 text-sm font-medium transition-colors ${
+                className={`mono flex-1 rounded py-1 text-xs transition-colors ${
                   dollars === String(v)
                     ? "bg-neutral-200 text-neutral-900"
                     : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
@@ -337,41 +351,51 @@ export function BuyPanel({
                 ${v}
               </button>
             ))}
-          </div>
-
-          <div className="flex items-center justify-between text-sm">
-            <span className="numeric text-neutral-400">
-              {formatStock(stockBalance, stock.decimals, 4)} {stock.symbol}{" "}
-              available
-              {stockPrice > 0 ? ` · ≈ ${formatUsd(availableUsd)}` : ""}
-            </span>
             <button
               type="button"
               onClick={setMax}
-              className="font-semibold text-neutral-900 hover:underline"
+              className="mono flex-1 rounded bg-neutral-100 py-1 text-xs font-semibold text-neutral-900 hover:bg-neutral-200"
             >
               Max
             </button>
           </div>
 
-          {tokens > 0n ? (
-            <div className="space-y-2 border-t border-neutral-100 pt-4">
+          <div className="mono flex items-center justify-between text-xs text-neutral-400">
+            <span>
+              {stockPrice > 0
+                ? `${formatUsd(availableUsd)} available`
+                : `${formatStock(stockBalance, stock.decimals, 2)} ${stock.symbol} available`}
+            </span>
+            {tokens > 0n ? (
+              <button
+                type="button"
+                onClick={() => setDetails((v) => !v)}
+                className="hover:text-neutral-900"
+              >
+                {details ? "Hide" : "Details"}
+              </button>
+            ) : null}
+          </div>
+
+          {details && tokens > 0n ? (
+            <div className="space-y-1.5 border-t border-neutral-200 pt-3">
               <Line label="You receive" strong>
-                {tokens.toLocaleString()} ${narrative.symbol}
+                {tokens.toLocaleString()} {narrative.symbol}
               </Line>
-              <Line label="Paid in stock">
+              <Line label="You pay">
                 {formatStock(maxIn, stock.decimals, 6)} {stock.symbol}
               </Line>
-              <Line label="Average per token">
-                {formatUsdAuto(toUsd(avgPerToken))}
-              </Line>
+              <Line label="Average per token">{formatUsdAuto(toUsd(avgPerToken))}</Line>
               <Line label={`Creator fee ${(narrative.feeBps / 100).toFixed(1)}%`}>
                 {formatStock(fee, stock.decimals, 6)} {stock.symbol}
               </Line>
               <Line label="Price impact">
-                <span className={impactPct >= 5 ? "text-accent" : ""}>
+                <span className={impactPct >= 5 ? "text-closing" : ""}>
                   +{impactPct.toFixed(impactPct < 1 ? 2 : 1)}%
                 </span>
+              </Line>
+              <Line label="Available">
+                {formatStock(stockBalance, stock.decimals, 4)} {stock.symbol}
               </Line>
             </div>
           ) : null}
@@ -391,36 +415,32 @@ export function BuyPanel({
 
           <Button
             onClick={buy}
+            variant="buy"
             disabled={busy || tokens === 0n || insufficient}
-            className="w-full !py-3.5 !text-base"
+            className="w-full"
             size="lg"
           >
-            {busy ? "Confirming…" : `Buy $${narrative.symbol}`}
+            {busy ? "Confirming…" : "Buy"}
           </Button>
-
-          <p className="text-center text-xs leading-relaxed text-neutral-400">
-            Converts into {stock.symbol} at expiry. Nothing to sell, no exit to
-            time.
-          </p>
         </>
       ) : (
         <>
-          <div className="rounded bg-neutral-50 px-5 py-5">
-            <div className="text-sm text-neutral-400">
-              Sell all {held.toLocaleString()} ${narrative.symbol}
+          <div className="rounded border border-neutral-200 bg-neutral-100 px-3.5 py-3">
+            <div className="mono text-xs text-neutral-400">
+              {held.toLocaleString()} {narrative.symbol}
             </div>
-            <div className="numeric mt-1 text-4xl font-semibold text-neutral-900">
+            <div className="numeric mt-0.5 text-2xl font-semibold text-neutral-900">
               {formatStock(proceeds, stock.decimals, 4)}{" "}
-              <span className="text-lg font-medium text-neutral-400">
+              <span className="text-base font-medium text-neutral-400">
                 {stock.symbol}
               </span>
             </div>
-            <div className="mt-1 text-sm text-neutral-400">
+            <div className="mono text-xs text-neutral-400">
               ≈ {formatUsd(toUsd(proceeds))}
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Line label={`Exit tax ${(narrative.sellTaxBps / 100).toFixed(0)}%`}>
               {formatStock(tax, stock.decimals, 6)} {stock.symbol}
             </Line>
@@ -428,17 +448,15 @@ export function BuyPanel({
 
           <Button
             onClick={sell}
-            variant="outline"
+            variant="sell"
             disabled={busy || !sellAll}
-            className="w-full !py-3.5 !text-base"
+            className="w-full"
             size="lg"
           >
-            {busy ? "Confirming…" : "Sell everything"}
+            {busy ? "Confirming…" : "Sell all"}
           </Button>
-
-          <p className="text-center text-xs leading-relaxed text-neutral-400">
-            The exit tax stays in the vault for the holders who stay to expiry.
-            Holding costs you nothing.
+          <p className="mono text-[11px] text-neutral-400">
+            The exit tax stays in the vault for holders who stay.
           </p>
         </>
       )}
@@ -503,11 +521,9 @@ export function RedeemPanel({
 
   return (
     <div className="space-y-4">
-      <Panel className="rounded px-5 py-5">
-        <div className="text-xs uppercase tracking-widest text-neutral-400">
-          Your claim
-        </div>
-        <div className="numeric mt-1.5 text-4xl font-semibold tracking-tight text-neutral-900">
+      <Panel className="rounded border border-neutral-200 px-3.5 py-3">
+        <div className="text-xs text-neutral-400">Your claim</div>
+        <div className="numeric mt-0.5 text-2xl font-semibold tracking-tight text-neutral-900">
           {formatStock(payout, stock.decimals, 4)}{" "}
           <span className="text-base font-normal text-neutral-400">
             {stock.symbol}
@@ -522,8 +538,9 @@ export function RedeemPanel({
 
       <Button
         onClick={redeem}
+        variant="accent"
         disabled={busy}
-        className="w-full !py-3.5 !text-base"
+        className="w-full"
         size="lg"
       >
         {busy ? "Confirming…" : `Convert to ${stock.symbol}`}

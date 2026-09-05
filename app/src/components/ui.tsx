@@ -32,10 +32,10 @@ export function Hero({
 }) {
   const a = align === "center" ? "text-center" : "text-left";
   return (
-    <div className={`space-y-2 ${a}`}>
-      <p className="text-sm text-neutral-400">{label}</p>
+    <div className={`space-y-1 ${a}`}>
+      <p className="text-xs text-neutral-400">{label}</p>
       <p
-        className={`numeric text-5xl font-semibold tracking-tight sm:text-6xl ${
+        className={`numeric text-3xl font-semibold tracking-tight sm:text-4xl ${
           muted ? "text-neutral-300" : "text-neutral-900"
         }`}
       >
@@ -194,14 +194,16 @@ export function Button({
   className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "outline" | "ghost" | "accent";
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "accent" | "buy" | "sell";
   size?: "sm" | "md" | "lg";
 }) {
   const variants = {
     primary:
       "bg-primary text-on-primary hover:bg-primary-hover disabled:bg-neutral-200 disabled:text-neutral-400",
     accent:
-      "bg-primary text-on-primary hover:bg-primary-hover disabled:bg-neutral-200 disabled:text-neutral-400",
+      "bg-accent text-on-accent hover:bg-accent-hover disabled:bg-neutral-200 disabled:text-neutral-400",
+    buy: "bg-buy text-white hover:bg-buy-hover disabled:bg-neutral-200 disabled:text-neutral-400",
+    sell: "border border-danger/60 bg-transparent text-danger hover:bg-danger-fill disabled:border-neutral-200 disabled:text-neutral-400",
     secondary:
       "border border-neutral-200 bg-neutral-50 text-neutral-900 hover:bg-neutral-100 disabled:text-neutral-400",
     outline:
@@ -471,6 +473,29 @@ export function TimeBar({
         style={{ width: `${done ? 100 : elapsed * 100}%` }}
       />
     </div>
+  );
+}
+
+/** A 24h move: green up, red down, grey flat. Colour is the only place gain and loss show. */
+export function Delta({
+  pct,
+  approx = false,
+  className = "",
+}: {
+  pct: number | null;
+  approx?: boolean;
+  className?: string;
+}) {
+  if (pct === null) return <span className={`mono text-neutral-400 ${className}`}>—</span>;
+  const up = pct > 0.05;
+  const down = pct < -0.05;
+  const tone = up ? "text-success" : down ? "text-danger" : "text-neutral-400";
+  const arrow = up ? "▲" : down ? "▼" : "";
+  return (
+    <span className={`mono ${tone} ${className}`} title={approx ? "In the underlying, not dollars" : "24h"}>
+      {arrow ? <span className="mr-0.5 inline-block text-[0.55em] align-middle">{arrow}</span> : null}
+      {Math.abs(pct).toFixed(Math.abs(pct) >= 100 ? 0 : 1)}%
+    </span>
   );
 }
 

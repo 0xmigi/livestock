@@ -17,6 +17,9 @@ const JUPITER_PRICE_API = "https://lite-api.jup.ag/price/v3";
 
 type PriceMap = Record<string, number>;
 
+/** 24h percent change per mint, when the feed reports one. */
+let changeCache: PriceMap = {};
+
 async function fetchPrices(mints: Address[]): Promise<PriceMap> {
   if (mints.length === 0) return {};
 
@@ -35,6 +38,8 @@ async function fetchPrices(mints: Address[]): Promise<PriceMap> {
       if (typeof entry !== "object" || entry === null) continue;
       const price = (entry as Record<string, unknown>).usdPrice;
       if (typeof price === "number" && price > 0) out[mint] = price;
+      const change = (entry as Record<string, unknown>).priceChange24h;
+      if (typeof change === "number") changeCache = { ...changeCache, [mint]: change };
     }
     return out;
   } catch {
@@ -60,6 +65,12 @@ function start() {
   };
   void load();
   setInterval(() => void load(), 60_000);
+}
+
+/** 24h change of every registered stock's price, keyed by mint. */
+export function useStockChanges(): PriceMap {
+  useStockPrices();
+  return changeCache;
 }
 
 /** Live USD prices for every registered stock, keyed by mint. */

@@ -1,7 +1,8 @@
 /**
  * The Livestock mark: two cow faces, one in front of the other. A herd, not a
  * cow. Solid shapes so it reads at 24px; features are cut out in the ground
- * colour.
+ * colour. It is drawn in the ink colour and never takes a semantic colour:
+ * blue means action, green means buy, and the brand means neither.
  */
 function Cow({ x, y, opacity = 1 }: { x: number; y: number; opacity?: number }) {
   return (
@@ -50,7 +51,7 @@ export function Logo({
 export function Wordmark({ className = "" }: { className?: string }) {
   return (
     <span className={`flex items-center gap-2.5 text-neutral-900 ${className}`}>
-      <Logo className="text-accent" size={28} />
+      <Logo className="text-neutral-900" size={28} />
       <span className="text-lg font-semibold tracking-tight">Livestock</span>
     </span>
   );

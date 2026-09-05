@@ -71,7 +71,7 @@ export function ExpireButton({
 
   return (
     <div className="space-y-3">
-      <Button onClick={settle} disabled={busy} className="w-full" size="lg">
+      <Button onClick={settle} variant="accent" disabled={busy} className="w-full" size="lg">
         {busy ? "Settling…" : "Settle this narrative"}
       </Button>
       {error ? <Notice kind="error">{error}</Notice> : null}

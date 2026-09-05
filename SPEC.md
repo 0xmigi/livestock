@@ -391,14 +391,21 @@ off-white ink, hairline borders, inverse solid buttons and 4px corners.
   panels, `#DEDDDB` borders, `#1C1C1D` ink. The `neutral` scale in
   `globals.css` is semantic (50 is the faintest panel, 900 the heading
   colour) so one class reads correctly on either ground.
-- **Buttons are inverse solids**: off-white on dark, near-black on light.
-  Secondary buttons carry a hairline. Nothing is orange, brown or blue.
-- **One accent**, teal (`#2FD39A` dark, `#0F9F72` light), reserved for the
-  time-elapsed bar and the live dot. Ending soon is a muted straw yellow.
+- **Colour is semantic**, the way fomo.family does it. Blue (`#516AF6`) is
+  for actions and links with no direction: Create, Continue, Launch, Settle,
+  Convert, the time bar, the ending-soon dot, creator and mint links. Green
+  (`#048F5C` solid, `#21C95E` text) is only ever buy and gain: the Buy
+  button, the live dot, success notices. Red-orange (`#FF622E`) is only ever
+  sell and loss: the Sell button, errors. Every figure stays in the ink
+  colour; nothing is coloured just because it is a number. Neutral controls
+  are hairline-bordered fills. The inverse off-white button is kept for the
+  login prompt only.
 - **Rounded but sharper.** 4px on everything; 2px on tiny badges. No pills.
 - **Type.** Geist for words, Geist Mono only for figures, tickers, prices,
   dates and addresses. No serif, no display face.
-- **The mark is a herd**: two cow faces, one behind the other.
+- **The mark is a herd**: two cow faces, one behind the other, drawn in the
+  ink colour. Branding never takes a semantic colour: a blue mark would say
+  "action" the way a green one would say "buy".
 - **The time bar is the signature element.** Every narrative carries a thin
   teal bar of how much of its life has elapsed.
 - **Stocks are first-class.** Logos and company names come from Jupiter's
@@ -423,9 +430,11 @@ time left, the bar, and a vault-and-date line. Twenty rows, then "Show 20
 more · N left".
 
 **`/n/[address]` — the narrative.** Identity row: image, name, `$TICKER ·
-converts to [logo] TSLAx · status`. A panel with the hero number (time
-remaining, or Settling / each token converts to / Done) over the full-width
-time bar with launch and expiry dates at its ends. The Overview grid: vault,
+converts to [logo] TSLAx · status`. One panel, first thing under the identity row: the
+hero number (time remaining, or Settling / each token converts to / Done)
+over the time bar with launch and expiry dates on the left, and the action
+(Buy/Sell, Settle, Convert, or the login prompt) on the right, side by side
+on desktop and stacked on phones. Nobody scrolls to trade. The Overview grid: vault,
 supply, next token or status, per token now, expires, creator fee, exit tax,
 creator holds; footer with creator and mint links. Action card by phase:
 dollar input with presets → tokens, stock paid, average, fee, price impact;

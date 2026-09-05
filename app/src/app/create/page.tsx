@@ -532,6 +532,7 @@ export default function Create() {
 
             {stock ? (
               <Overview
+                className="lg:hidden"
                 title="Terms"
                 aside={`${stock.symbol} ${formatUsd(price)}${isLive ? "" : " est."}`}
                 columns={3}

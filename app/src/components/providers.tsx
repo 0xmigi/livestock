@@ -40,7 +40,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           // A hex theme paints the modal on our own ground; the rest of the
           // palette comes from the --privy-* variables in globals.css.
           theme: theme === "dark" ? "#141414" : "#ffffff",
-          accentColor: theme === "dark" ? "#f2f1ee" : "#1b1b1b",
+          accentColor: theme === "dark" ? "#516af6" : "#3b53e0",
           landingHeader: "Log in to Livestock",
           walletChainType: "solana-only",
           walletList: ["detected_solana_wallets", "phantom", "solflare"],

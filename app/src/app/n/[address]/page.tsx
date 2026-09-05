@@ -3,7 +3,7 @@
 import { use } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { ChevronLeft, ExternalLink } from "lucide-react";
+import { ChevronLeft, Clock, ExternalLink } from "lucide-react";
 import {
   formatStock,
   redemptionPerToken,
@@ -19,14 +19,12 @@ import { Shell } from "@/components/shell";
 import { Thumb } from "@/components/thumb";
 import {
   Button,
-  Card,
+  Delta,
   Hero,
   Notice,
-  Overview,
   phaseOf,
   StatusDot,
   StockLogo,
-  Tile,
   TimeBar,
 } from "@/components/ui";
 import { useOwner } from "@/components/wallet";
@@ -42,7 +40,25 @@ import {
   useNarrative,
   useNow,
 } from "@/lib/narratives";
+import { useActivity, usePriceChange } from "@/lib/change";
+import { useHolders } from "@/lib/holders";
 import { useStockPrice } from "@/lib/price";
+
+/** The clock: blue, mono, `13d 15h 1m 22s`, ticking every second. */
+function Countdown({ seconds }: { seconds: number }) {
+  const t = Math.max(0, seconds);
+  const d = Math.floor(t / 86_400);
+  const h = Math.floor((t % 86_400) / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = t % 60;
+  const text = d > 0 ? `${d}d ${h}h ${m}m ${sec}s` : h > 0 ? `${h}h ${m}m ${sec}s` : `${m}m ${sec}s`;
+  return (
+    <span className="mono inline-flex items-center gap-1.5 text-base font-medium text-accent" aria-label="Time remaining">
+      <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+      {text}
+    </span>
+  );
+}
 
 export default function NarrativePage({
   params,
@@ -64,6 +80,9 @@ export default function NarrativePage({
   const { narrative, position, creatorHoldings, error, loading, refresh } =
     useNarrative(parsed, owner);
   const { price, isLive: priceIsLive } = useStockPrice(narrative?.stockMint);
+  const change = usePriceChange(parsed, narrative);
+  const activity = useActivity(parsed, narrative);
+  const holders = useHolders(narrative?.narrativeMint ?? null);
 
   if (!parsed) {
     return (
@@ -120,10 +139,36 @@ export default function NarrativePage({
   const usdSuffix = priceIsLive ? "" : " est.";
   const inStock = (usd: string) => (price > 0 ? `${stock.symbol} ≈ ${usd}` : stock.symbol);
 
+  const action = !ready ? (
+    <div className="h-24 animate-pulse rounded bg-neutral-100" />
+  ) : !authenticated || !owner ? (
+    <div className="flex h-full flex-col justify-center py-2 text-center">
+      <p className="text-sm text-neutral-600">
+        {tradable ? `Log in to buy $${narrative.symbol}.` : "Log in to see your position."}
+      </p>
+      <Button onClick={login} className="mt-4 w-full" size="lg">
+        Log in or sign up
+      </Button>
+    </div>
+  ) : narrative.status === Status.Settled ? (
+    <Notice>This narrative is fully settled. Every claim has been converted into {stock.symbol}.</Notice>
+  ) : narrative.status === Status.Expired ? (
+    <RedeemPanel narrative={narrative} position={position} owner={owner} stockPrice={price} onDone={refresh} />
+  ) : phase === "settling" ? (
+    <div className="space-y-4">
+      <Notice>
+        The date has passed and trading has stopped. Someone needs to settle it before claims open.
+        Anyone can, including you.
+      </Notice>
+      <ExpireButton narrative={narrative} owner={owner} onDone={refresh} />
+    </div>
+  ) : (
+    <BuyPanel narrative={narrative} position={position} owner={owner} stockPrice={price} onDone={refresh} />
+  );
+
   return (
     <Shell>
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
-      <div className="min-w-0 space-y-8">
+      <div className="space-y-8">
         <Link
           href="/"
           className="mono inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-900"
@@ -132,187 +177,151 @@ export default function NarrativePage({
           Markets
         </Link>
 
-        {/* Identity */}
-        <header className="flex items-start gap-4">
-          <Thumb src={narrative.meta?.image} name={narrative.name} size={64} shape="square" />
-          <div className="min-w-0 flex-1">
-            <h1 className="display text-2xl text-neutral-900 sm:text-3xl">
-              {narrative.name}
-            </h1>
-            <div className="mono mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-neutral-400">
-              <span>${narrative.symbol}</span>
-              <span aria-hidden>·</span>
-              <span className="inline-flex items-center gap-1.5">
-                <StockLogo stock={stock} size={14} />
-                converts to {stock.symbol}
-              </span>
-              <span aria-hidden>·</span>
-              <StatusDot phase={phase} pulse />
-            </div>
-          </div>
-        </header>
-
-        {/* The one hero number, and the bar that is the product */}
-        <div className="space-y-4 rounded border border-neutral-200 bg-neutral-50 p-5 sm:p-6">
-          {tradable ? (
-            <Hero
-              align="left"
-              label="Time remaining"
-              value={formatCountdown(remaining)}
-              sub={`Converts to ${stock.symbol} on ${formatDate(narrative.expiryTs)}`}
-            />
-          ) : phase === "settling" ? (
-            <Hero
-              align="left"
-              label="Trading closed"
-              value="Settling"
-              sub={`Expired ${formatDate(narrative.expiryTs)}. Claims open once settled.`}
-            />
-          ) : phase === "redeemable" ? (
-            <Hero
-              align="left"
-              label="Each token converts to"
-              value={
-                <>
-                  {formatStock(perToken, stock.decimals, 6)}
-                  <span className="ml-2 text-2xl font-semibold text-neutral-400">{stock.symbol}</span>
-                </>
-              }
-              sub={`≈ ${formatUsdAuto(toUsd(perToken))}. Claims never expire.`}
-            />
-          ) : (
-            <Hero
-              align="left"
-              label="Fully settled"
-              value="Done"
-              muted
-              sub={`Every token was converted into ${stock.symbol}`}
-            />
-          )}
-          <TimeBar createdTs={narrative.createdTs} expiryTs={narrative.expiryTs} now={now} phase={phase} />
-          <div className="mono flex justify-between text-[11px] text-neutral-400">
-            <span>Launched {formatDate(narrative.createdTs)}</span>
-            <span>Expires {formatDate(narrative.expiryTs)}</span>
-          </div>
-        </div>
-
-        {/* The numbers */}
-        <Overview
-          title="Overview"
-          aside={price > 0 ? `${stock.symbol} ${formatUsd(price)}${usdSuffix}` : stock.symbol}
-          footer={
-            <>
-              Created by{" "}
-              <FootLink href={explorerUrl(narrative.creator)}>{shortAddress(narrative.creator)}</FootLink>
-              . Token{" "}
-              <FootLink href={explorerUrl(narrative.narrativeMint)}>{shortAddress(narrative.narrativeMint)}</FootLink>
-              . The expiry date was fixed at creation and cannot move.
-            </>
-          }
-        >
-          <Tile label="Vault" value={formatStock(backing, stock.decimals, 2)} sub={inStock(formatUsd(toUsd(backing)))} />
-          <Tile label="Supply" value={supply.toLocaleString()} sub={`$${narrative.symbol}`} />
-          {tradable ? (
-            <Tile label="Next token" value={formatStock(nextPrice, stock.decimals, 6)} sub={inStock(formatUsdAuto(toUsd(nextPrice)))} />
-          ) : (
-            <Tile
-              label="Status"
-              value={phase === "settling" ? "Settling" : phase === "redeemable" ? "Redeemable" : "Settled"}
-              sub={`Expired ${formatDate(narrative.expiryTs)}`}
-            />
-          )}
-          <Tile label={tradable ? "Per token now" : "Per token"} value={formatStock(perTokenNow, stock.decimals, 6)} sub={inStock(formatUsdAuto(toUsd(perTokenNow)))} />
-          <Tile
-            label="Expires"
-            value={formatDate(narrative.expiryTs).split(",")[0]}
-            sub={tradable ? `${formatCountdown(remaining)} left` : formatDate(narrative.expiryTs).split(",")[1]?.trim()}
-          />
-          <Tile label="Creator fee" value={`${(narrative.feeBps / 100).toFixed(2)}%`} sub="on every buy" />
-          <Tile label="Exit tax" value={`${(narrative.sellTaxBps / 100).toFixed(0)}%`} sub="kept in the vault" />
-          <Tile
-            label="Creator holds"
-            value={creatorHoldings !== null ? creatorHoldings.toLocaleString() : "—"}
-            sub={creatorHoldings !== null && supply > 0n ? `${pct(share(creatorHoldings))} of supply` : `$${narrative.symbol}`}
-          />
-        </Overview>
-
-        {/* About */}
-        {narrative.meta?.description || narrative.meta?.website || narrative.meta?.twitter || narrative.meta?.telegram ? (
-          <Card className="space-y-4">
-            {narrative.meta.description ? (
-              <p className="text-sm leading-relaxed text-neutral-600">{narrative.meta.description}</p>
-            ) : null}
-            {narrative.meta.website || narrative.meta.twitter || narrative.meta.telegram ? (
-              <div className="flex flex-wrap gap-2">
-                {narrative.meta.website ? <LinkChip href={narrative.meta.website}>Website</LinkChip> : null}
-                {narrative.meta.twitter ? <LinkChip href={narrative.meta.twitter}>X</LinkChip> : null}
-                {narrative.meta.telegram ? <LinkChip href={narrative.meta.telegram}>Telegram</LinkChip> : null}
+        {/* The clock and the action, in one panel */}
+        <section className="grid overflow-hidden rounded border border-neutral-200 bg-neutral-50 lg:grid-cols-[minmax(0,1fr)_400px]">
+          <div className="flex flex-col justify-between gap-6 p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <Thumb src={narrative.meta?.image} name={narrative.name} size={48} shape="square" />
+                <div className="min-w-0">
+                  <h1 className="line-clamp-2 text-xl font-semibold leading-tight text-neutral-900">{narrative.name}</h1>
+                  <div className="mono mt-1 flex items-center gap-2 text-xs text-neutral-400">
+                    ${narrative.symbol}
+                    <span aria-hidden>·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <StockLogo stock={stock} size={12} />
+                      {stock.symbol}
+                    </span>
+                    {phase !== "live" ? <StatusDot phase={phase} /> : null}
+                  </div>
+                </div>
               </div>
-            ) : null}
-          </Card>
-        ) : null}
-
-        <p className="px-1 text-sm leading-relaxed text-neutral-400">
-          Your payout is the vault split evenly across every token. You gain if the narrative kept
-          growing after you bought, and you receive {stock.symbol} either way. Nothing here checks
-          whether the story came true: payoff follows flows, not facts.
-        </p>
-      </div>
-
-      <aside className="space-y-6 lg:sticky lg:top-6">
-        {/* Action */}
-        <Card className="!p-5">
-          {!ready ? (
-            <div className="h-24 animate-pulse rounded bg-neutral-100" />
-          ) : !authenticated || !owner ? (
-            <div className="py-4 text-center">
-              <p className="text-sm text-neutral-600">
-                {tradable ? `Log in to buy $${narrative.symbol}.` : "Log in to see your position."}
-              </p>
-              <Button onClick={login} className="mt-4 w-full" size="lg">
-                Log in or sign up
-              </Button>
+              {tradable ? (
+                <div className="shrink-0 text-right">
+                  <div className="numeric text-3xl font-semibold tracking-tight text-neutral-900 sm:text-4xl">
+                    {formatUsdAuto(toUsd(nextPrice))}
+                  </div>
+                  <Delta pct={change?.pct ?? null} approx={change?.inStockTerms} className="text-sm font-medium" />
+                </div>
+              ) : null}
             </div>
-          ) : narrative.status === Status.Settled ? (
-            <Notice>
-              This narrative is fully settled. Every claim has been converted into {stock.symbol}.
-            </Notice>
-          ) : narrative.status === Status.Expired ? (
-            <RedeemPanel narrative={narrative} position={position} owner={owner} stockPrice={price} onDone={refresh} />
-          ) : phase === "settling" ? (
-            <div className="space-y-4">
-              <Notice>
-                The date has passed and trading has stopped. Someone needs to settle it before claims
-                open. Anyone can, including you.
-              </Notice>
-              <ExpireButton narrative={narrative} owner={owner} onDone={refresh} />
+            {tradable ? null : phase === "settling" ? (
+              <Hero
+                align="left"
+                label="Trading closed"
+                value="Settling"
+                sub="Claims open once settled."
+              />
+            ) : phase === "redeemable" ? (
+              <Hero
+                align="left"
+                label="Each token converts to"
+                value={
+                  <>
+                    {formatStock(perToken, stock.decimals, 6)}
+                    <span className="ml-2 text-2xl font-semibold text-neutral-400">{stock.symbol}</span>
+                  </>
+                }
+                sub={`≈ ${formatUsdAuto(toUsd(perToken))}. Claims never expire.`}
+              />
+            ) : (
+              <Hero align="left" label="Fully settled" value="Done" muted sub={`Every token was converted into ${stock.symbol}`} />
+            )}
+            <div>
+              {tradable ? (
+                <div className="mb-2 flex items-center justify-between gap-4">
+                  <span className="text-xs text-neutral-400">Time remaining</span>
+                  <Countdown seconds={remaining} />
+                </div>
+              ) : null}
+              <TimeBar createdTs={narrative.createdTs} expiryTs={narrative.expiryTs} now={now} phase={phase} />
             </div>
-          ) : (
-            <BuyPanel narrative={narrative} position={position} owner={owner} stockPrice={price} onDone={refresh} />
-          )}
-        </Card>
+          </div>
+          <div className="border-t border-neutral-200 p-5 lg:border-l lg:border-t-0">{action}</div>
+        </section>
 
-        {/* Position */}
-        {owner && held > 0n && narrative.status !== Status.Expired ? (
-          <Overview title="Your position" columns={2}>
-            <Tile label="You hold" value={held.toLocaleString()} sub={`$${narrative.symbol}`} />
-            <Tile label="Share of supply" value={pct(share(held))} sub={`of ${supply.toLocaleString()}`} />
-            <Tile
-              label="Worth at expiry"
-              value={formatStock(supply > 0n ? (backing * held) / supply : 0n, stock.decimals, 4)}
-              sub={inStock(formatUsdAuto(toUsd(supply > 0n ? (backing * held) / supply : 0n)))}
+        {/* Details, in the order a buyer asks: is it alive, what do I get, how big, who is behind it */}
+        <section className="flex flex-col gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200">
+          <div className="grid grid-cols-2 gap-px sm:grid-cols-4">
+            <Figure
+              label="24h volume"
+              value={activity ? formatUsd(toUsd(activity.volume), 0) : "—"}
+              sub={activity ? `${activity.buys} buys · ${activity.sells} sells` : undefined}
             />
-            <Tile
-              label="In your wallet"
-              value={formatStock(position?.stockBalance ?? 0n, stock.decimals, 2)}
-              sub={inStock(formatUsd(toUsd(position?.stockBalance ?? 0n)))}
+            <Figure
+              label="Holders"
+              value={holders ? `${holders.count}${holders.more ? "+" : ""}` : "—"}
+              sub={
+                holders && holders.count > 0 && supply > 0n
+                  ? `top holds ${pct((Number(holders.top) / Number(supply)) * 100)}${holders.topOwner === narrative.creator ? ", the creator" : ""}`
+                  : undefined
+              }
             />
-          </Overview>
+            <Figure
+              label="Pays per token"
+              value={`${formatStock(perTokenNow, stock.decimals, 6)} ${stock.symbol}`}
+              sub={price > 0 ? `≈ ${formatUsdAuto(toUsd(perTokenNow))}` : undefined}
+            />
+            <Figure
+              label="Vault"
+              value={`${formatStock(backing, stock.decimals, 2)} ${stock.symbol}`}
+              sub={price > 0 ? `≈ ${formatUsd(toUsd(backing))}` : undefined}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-px sm:grid-cols-4">
+            <Small label="FDV" value={formatUsd(toUsd(nextPrice * supply), 0)} />
+            <Small label="Supply" value={`${supply.toLocaleString()} ${narrative.symbol}`} />
+            <Small
+              label="Creator holds"
+              value={creatorHoldings !== null && supply > 0n ? pct(share(creatorHoldings)) : "—"}
+            />
+            <Small label="Launched" value={formatDate(narrative.createdTs)} />
+          </div>
+          <div className="grid grid-cols-2 gap-px sm:grid-cols-4">
+            <Small label="Token" value={<FootLink href={explorerUrl(narrative.narrativeMint)}>{shortAddress(narrative.narrativeMint)}</FootLink>} />
+            <Small label="Creator" value={<FootLink href={explorerUrl(narrative.creator)}>{shortAddress(narrative.creator)}</FootLink>} />
+            <Small
+              label="Source"
+              value={
+                narrative.meta?.twitter ? (
+                  <FootLink href={narrative.meta.twitter}>X</FootLink>
+                ) : narrative.meta?.website ? (
+                  <FootLink href={narrative.meta.website}>Website</FootLink>
+                ) : narrative.meta?.telegram ? (
+                  <FootLink href={narrative.meta.telegram}>Telegram</FootLink>
+                ) : (
+                  <span className="text-neutral-400">none</span>
+                )
+              }
+            />
+            <Small label="Converts to" value={<span className="inline-flex items-center gap-1.5"><StockLogo stock={stock} size={14} />{stock.symbol}</span>} />
+          </div>
+        </section>
+
+        {narrative.meta?.description ? (
+          <p className="px-1 text-sm leading-relaxed text-neutral-600">{narrative.meta.description}</p>
         ) : null}
-
-      </aside>
       </div>
     </Shell>
+  );
+}
+
+function Figure({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="min-w-0 bg-neutral-50 px-4 py-3">
+      <div className="text-xs text-neutral-400">{label}</div>
+      <div className="mono mt-1 truncate text-[15px] font-semibold text-neutral-900">{value}</div>
+      {sub ? <div className="mono mt-0.5 truncate text-[11px] text-neutral-400">{sub}</div> : null}
+    </div>
+  );
+}
+
+function Small({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0 bg-neutral-50 px-4 py-2.5">
+      <div className="text-[11px] text-neutral-400">{label}</div>
+      <div className="mono mt-0.5 truncate text-[13px] text-neutral-900">{value}</div>
+    </div>
   );
 }
 
@@ -322,21 +331,7 @@ function FootLink({ href, children }: { href: string; children: string }) {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="mono inline-flex items-center gap-0.5 text-neutral-600 underline decoration-neutral-300 underline-offset-2 hover:text-neutral-900"
-    >
-      {children}
-      <ExternalLink className="h-3 w-3" />
-    </a>
-  );
-}
-
-function LinkChip({ href, children }: { href: string; children: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="mono inline-flex items-center gap-1 rounded bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-200"
+      className="mono inline-flex items-center gap-0.5 text-link underline decoration-link/40 underline-offset-2 hover:decoration-link"
     >
       {children}
       <ExternalLink className="h-3 w-3" />

@@ -4,8 +4,9 @@
  * Livestock's visual system.
  *
  * Dark by default, light behind a toggle. Near-black (never black) with
- * off-white ink, hairline borders, 4px corners, inverse solid buttons, and one
- * teal accent reserved for the clock. Geist for words, Geist Mono only for
+ * off-white ink, hairline borders, 4px corners. Colour is semantic, the way
+ * fomo does it: blue for actions and links with no direction, green only for
+ * buy and gain, red only for sell and loss. Figures stay in the ink colour. Geist for words, Geist Mono only for
  * figures, tickers and addresses.
  *
  * The `neutral` scale below is semantic, not literal: 50 is the faintest panel
@@ -30,20 +31,24 @@
   --primary-hover: #ffffff;
   --on-primary: #141414;
 
-  --accent: #2fd39a;
-  --accent-hover: #4fe0ad;
-  --accent-light: #123126;
-  --on-accent: #141414;
-  --link: #cfcdcc;
+  /* Blue: actions and links with no direction. Green: buy and gain.
+     Red: sell and loss. Figures stay in the ink colour. */
+  --accent: #516af6;
+  --accent-hover: #6b80ff;
+  --accent-light: #171d3a;
+  --on-accent: #ffffff;
+  --buy: #048f5c;
+  --buy-hover: #05a86c;
+  --link: #516af6;
 
-  --live: #2fd39a;
-  --closing: #e0b44c;
+  --live: #21c95e;
+  --closing: #516af6;
   --settled: #7a7a76;
 
-  --danger: #f07070;
-  --danger-fill: #2e1a1a;
-  --success: #2fd39a;
-  --success-fill: #123126;
+  --danger: #ff622e;
+  --danger-fill: #2e1a14;
+  --success: #21c95e;
+  --success-fill: #0f2b20;
   --warn-fill: #302a14;
 
   --shadow: rgba(0, 0, 0, 0.6);
@@ -65,20 +70,22 @@
   --primary-hover: #000000;
   --on-primary: #ffffff;
 
-  --accent: #0f9f72;
-  --accent-hover: #0b8760;
-  --accent-light: #e3f4ed;
+  --accent: #3b53e0;
+  --accent-hover: #2f45c4;
+  --accent-light: #e8ebfd;
   --on-accent: #ffffff;
-  --link: #1c1c1d;
+  --buy: #048f5c;
+  --buy-hover: #037a4e;
+  --link: #3b53e0;
 
-  --live: #0f9f72;
-  --closing: #b07d0a;
+  --live: #0a9c4f;
+  --closing: #3b53e0;
   --settled: #7a7a76;
 
-  --danger: #b3261e;
-  --danger-fill: #fbeceb;
-  --success: #0f9f72;
-  --success-fill: #e3f4ed;
+  --danger: #d6431a;
+  --danger-fill: #fdeee8;
+  --success: #0a9c4f;
+  --success-fill: #e1f5ea;
   --warn-fill: #fbf3d9;
 
   --shadow: rgba(28, 28, 29, 0.12);
@@ -114,6 +121,8 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-light: var(--accent-light);
   --color-on-accent: var(--on-accent);
+  --color-buy: var(--buy);
+  --color-buy-hover: var(--buy-hover);
   --color-link: var(--link);
 
   --color-live: var(--live);

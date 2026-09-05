@@ -43,7 +43,7 @@ export function Shell({
               Create
             </Button>
           </Link>
-          <ThemeToggle className="hidden sm:flex" />
+          <ThemeToggle />
           <AccountChip />
         </div>
       </header>
