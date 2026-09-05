@@ -1,45 +1,158 @@
 @import "tailwindcss";
 
 /*
- * Livestock follows the Moment app's visual system: Inter on a white ground,
- * warm neutrals instead of blue-greys, one amber accent, and generous air.
- * Status dots are the only other colour on the page.
+ * Livestock's visual system.
+ *
+ * Dark by default, light behind a toggle. Near-black (never black) with
+ * off-white ink, hairline borders, 4px corners, inverse solid buttons, and one
+ * teal accent reserved for the clock. Geist for words, Geist Mono only for
+ * figures, tickers and addresses.
+ *
+ * The `neutral` scale below is semantic, not literal: 50 is the faintest panel
+ * tint and 900 the heading colour in *both* themes, so the same class reads
+ * correctly on either ground.
  */
-@theme {
-  --font-sans: var(--font-inter), Inter, ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", sans-serif;
-
-  /* Warm neutrals — the whole palette. */
-  --color-neutral-50: #fafaf8;
-  --color-neutral-100: #f3f3ef;
-  --color-neutral-200: #e8e8e3;
-  --color-neutral-300: #d4d4ce;
-  --color-neutral-400: #8a8a82;
-  --color-neutral-500: #8a8a82;
-  --color-neutral-600: #5c5c56;
-  --color-neutral-700: #5c5c56;
-  --color-neutral-800: #3a3a36;
-  --color-neutral-900: #1a1a18;
-  --color-neutral-950: #0f0f0d;
-
-  /* Primary action — the olive-grey button Moment uses for "Continue". */
-  --color-primary: #5c5c56;
-  --color-primary-hover: #3a3a36;
-  --color-primary-light: #f3f3ef;
-
-  /* Amber accent — progress, highlights, "expiring soon". */
-  --color-accent: #d97706;
-  --color-accent-hover: #b45309;
-  --color-accent-light: #fef3c7;
-
-  /* Status dots. */
-  --color-live: #22c55e;
-  --color-closing: #d97706;
-  --color-settled: #8a8a82;
-}
 
 :root {
+  color-scheme: dark;
+
+  /* Near-black, not black. Off-white ink. One teal accent for the clock. */
+  --ground: #141414;
+  --n50: #1a1a1a;
+  --n100: #202020;
+  --n200: #2a2a2a;
+  --n300: #3a3a3a;
+  --n400: #a7a79f;
+  --n600: #cfcdcc;
+  --n900: #f2f1ee;
+
+  --primary: #f2f1ee;
+  --primary-hover: #ffffff;
+  --on-primary: #141414;
+
+  --accent: #2fd39a;
+  --accent-hover: #4fe0ad;
+  --accent-light: #123126;
+  --on-accent: #141414;
+  --link: #cfcdcc;
+
+  --live: #2fd39a;
+  --closing: #e0b44c;
+  --settled: #7a7a76;
+
+  --danger: #f07070;
+  --danger-fill: #2e1a1a;
+  --success: #2fd39a;
+  --success-fill: #123126;
+  --warn-fill: #302a14;
+
+  --shadow: rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="light"] {
   color-scheme: light;
+
+  --ground: #ffffff;
+  --n50: #f9f9f8;
+  --n100: #f0f0ee;
+  --n200: #dedddb;
+  --n300: #c4c3c0;
+  --n400: #7a7a76;
+  --n600: #4a4a48;
+  --n900: #1c1c1d;
+
+  --primary: #1b1b1b;
+  --primary-hover: #000000;
+  --on-primary: #ffffff;
+
+  --accent: #0f9f72;
+  --accent-hover: #0b8760;
+  --accent-light: #e3f4ed;
+  --on-accent: #ffffff;
+  --link: #1c1c1d;
+
+  --live: #0f9f72;
+  --closing: #b07d0a;
+  --settled: #7a7a76;
+
+  --danger: #b3261e;
+  --danger-fill: #fbeceb;
+  --success: #0f9f72;
+  --success-fill: #e3f4ed;
+  --warn-fill: #fbf3d9;
+
+  --shadow: rgba(28, 28, 29, 0.12);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist), Geist, ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
+
+  --color-ground: var(--ground);
+  /* `white` is the page ground in both themes so older components keep working. */
+  --color-white: var(--ground);
+
+  --color-neutral-50: var(--n50);
+  --color-neutral-100: var(--n100);
+  --color-neutral-200: var(--n200);
+  --color-neutral-300: var(--n300);
+  --color-neutral-400: var(--n400);
+  --color-neutral-500: var(--n400);
+  --color-neutral-600: var(--n600);
+  --color-neutral-700: var(--n600);
+  --color-neutral-800: var(--n900);
+  --color-neutral-900: var(--n900);
+  --color-neutral-950: var(--n900);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-light: var(--accent-light);
+  --color-on-accent: var(--on-accent);
+  --color-link: var(--link);
+
+  --color-live: var(--live);
+  --color-closing: var(--closing);
+  --color-settled: var(--settled);
+
+  --color-danger: var(--danger);
+  --color-danger-fill: var(--danger-fill);
+  --color-success: var(--success);
+  --color-success-fill: var(--success-fill);
+  --color-warn-fill: var(--warn-fill);
+}
+
+/* Privy's modal reads these, so it sits on the same ground with the same
+   corners and type as the rest of the app. Privy declares its own defaults on
+   `:root` after ours, so the doubled selector is what makes ours win. */
+:root:root {
+  --privy-color-background: var(--ground);
+  --privy-color-background-2: var(--n100);
+  --privy-color-background-3: var(--n200);
+  --privy-color-foreground: var(--n900);
+  --privy-color-foreground-2: var(--n600);
+  --privy-color-foreground-3: var(--n400);
+  --privy-color-foreground-4: var(--n300);
+  --privy-color-foreground-accent: var(--on-primary);
+  --privy-color-accent: var(--primary);
+  --privy-color-accent-light: var(--n100);
+  --privy-color-accent-dark: var(--primary-hover);
+  --privy-color-success: var(--success);
+  --privy-color-error: var(--danger);
+  --privy-border-radius-sm: 4px;
+  --privy-border-radius-md: 4px;
+  --privy-border-radius-mdlg: 4px;
+  --privy-border-radius-lg: 6px;
+  --privy-border-radius-full: 4px;
+}
+#privy-modal-content,
+#privy-modal-content * {
+  font-family: var(--font-sans) !important;
 }
 
 html,
@@ -48,8 +161,8 @@ body {
 }
 
 body {
-  background: #ffffff;
-  color: var(--color-neutral-900);
+  background: var(--ground);
+  color: var(--n900);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -61,16 +174,22 @@ body {
   font-feature-settings: "tnum";
 }
 
-/* The small uppercase label that sits above a hero number. */
-.label {
-  font-size: 0.8125rem;
-  line-height: 1.25;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-neutral-400);
+/* Chrome: labels, tickers, figures, controls. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
-/* Thin scrollbars, as in Moment. */
+/* Narrative names and page titles. */
+.display {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+/* Thin scrollbars. */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -79,12 +198,12 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--n300);
   border-radius: 3px;
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  scrollbar-color: var(--n300) transparent;
 }
 .scrollbar-hide {
   -ms-overflow-style: none;
@@ -101,6 +220,20 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 input[type="number"] {
   -moz-appearance: textfield;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* iOS Safari safe areas. */

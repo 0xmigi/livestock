@@ -293,7 +293,7 @@ export function BuyPanel({
       {mode === "buy" ? (
         <>
           {/* One big number, as on a trading app. */}
-          <label className="block rounded-2xl bg-neutral-50 px-5 py-5 focus-within:ring-2 focus-within:ring-neutral-200">
+          <label className="block rounded bg-neutral-50 px-5 py-5 focus-within:ring-2 focus-within:ring-neutral-200">
             <div className="flex items-baseline gap-1">
               <span className="numeric text-4xl font-semibold text-neutral-300">
                 $
@@ -328,7 +328,7 @@ export function BuyPanel({
                 key={v}
                 type="button"
                 onClick={() => setDollars(String(v))}
-                className={`numeric flex-1 rounded-xl py-2 text-sm font-medium transition-colors ${
+                className={`numeric flex-1 rounded py-2 text-sm font-medium transition-colors ${
                   dollars === String(v)
                     ? "bg-neutral-200 text-neutral-900"
                     : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
@@ -405,7 +405,7 @@ export function BuyPanel({
         </>
       ) : (
         <>
-          <div className="rounded-2xl bg-neutral-50 px-5 py-5">
+          <div className="rounded bg-neutral-50 px-5 py-5">
             <div className="text-sm text-neutral-400">
               Sell all {held.toLocaleString()} ${narrative.symbol}
             </div>
@@ -503,7 +503,7 @@ export function RedeemPanel({
 
   return (
     <div className="space-y-4">
-      <Panel className="rounded-2xl px-5 py-5">
+      <Panel className="rounded px-5 py-5">
         <div className="text-xs uppercase tracking-widest text-neutral-400">
           Your claim
         </div>

@@ -8,6 +8,7 @@
 import { buyCost, spotPrice, type CurveParams } from "@nm/client";
 
 import { formatUsd, formatUsdAuto } from "@/lib/config";
+import { Tile } from "./ui";
 
 export function CurvePreview({
   params,
@@ -53,8 +54,8 @@ export function CurvePreview({
       >
         <defs>
           <linearGradient id="curve-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#d97706" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#d97706" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
         <polygon
@@ -66,21 +67,21 @@ export function CurvePreview({
           y1={y0}
           x2={x1}
           y2={y1}
-          stroke="#d97706"
+          stroke="var(--accent)"
           strokeWidth="2"
           strokeLinecap="round"
         />
-        <circle cx={x0} cy={y0} r="3" fill="#1a1a18" />
-        <circle cx={x1} cy={y1} r="3" fill="#1a1a18" />
+        <circle cx={x0} cy={y0} r="3" fill="var(--n900)" />
+        <circle cx={x1} cy={y1} r="3" fill="var(--n900)" />
       </svg>
 
-      <div className="grid grid-cols-3 gap-3 text-xs">
-        <Figure label="First token" value={formatUsdAuto(toUsd(first))} />
-        <Figure
+      <div className="grid grid-cols-3 gap-2 rounded bg-neutral-50 p-2">
+        <Tile label="First token" value={formatUsdAuto(toUsd(first))} />
+        <Tile
           label={`At ${(Number(maxSupply) / 2).toLocaleString()}`}
           value={formatUsdAuto(toUsd(halfway))}
         />
-        <Figure
+        <Tile
           label={`At ${Number(maxSupply).toLocaleString()}`}
           value={formatUsdAuto(toUsd(last))}
         />
@@ -95,17 +96,6 @@ export function CurvePreview({
         everyone redeems at the same average, which is where early gains come
         from.
       </p>
-    </div>
-  );
-}
-
-function Figure({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-neutral-50 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wider text-neutral-400">
-        {label}
-      </div>
-      <div className="numeric mt-0.5 font-medium text-neutral-900">{value}</div>
     </div>
   );
 }

@@ -5,6 +5,10 @@
  * the Solana CLI config and the stock mint from the environment.
  *
  *   RPC_URL=... STOCK_MINT=... pnpm --filter @nm/scripts run seed
+ *
+ * HOURS=1 seeds a single short-lived narrative instead, so the expire and
+ * redeem paths can be exercised on a live cluster without waiting a week
+ * (the program's minimum duration is one hour).
  */
 
 import { readFileSync } from "node:fs";
@@ -123,11 +127,16 @@ async function stockTokenProgramOf(mint: Address): Promise<Address> {
 const METADATA_URI =
   process.env.METADATA_URI ?? "https://example.invalid/narrative.json";
 
-const NARRATIVES = [
-  { name: "Robotaxi Austin", symbol: "RBTX", days: 14, buy: 400 },
-  { name: "FSD v14", symbol: "FSD", days: 7, buy: 150 },
-  { name: "Optimus Preorders", symbol: "OPTI", days: 30, buy: 0 },
-];
+const HOURS = Number(process.env.HOURS ?? 0);
+
+const NARRATIVES =
+  HOURS > 0
+    ? [{ name: "Lifecycle test", symbol: "LIFE", hours: HOURS, buy: 250 }]
+    : [
+        { name: "Robotaxi Austin", symbol: "RBTX", hours: 14 * 24, buy: 400 },
+        { name: "FSD v14", symbol: "FSD", hours: 7 * 24, buy: 150 },
+        { name: "Optimus Preorders", symbol: "OPTI", hours: 30 * 24, buy: 0 },
+      ];
 
 async function main(): Promise<void> {
   const stockMintRaw = process.env.STOCK_MINT;
@@ -155,7 +164,7 @@ async function main(): Promise<void> {
     const [vault] = await findVault(narrative, stockMint, stockTokenProgram);
 
     const expiryTs = BigInt(
-      Math.floor(Date.now() / 1000) + spec.days * 24 * 3600,
+      Math.floor(Date.now() / 1000) + Math.round(spec.hours * 3600),
     );
 
     const { fundFor } = getNarrativeMintSize(

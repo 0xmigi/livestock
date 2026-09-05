@@ -1,8 +1,7 @@
 "use client";
 
 /**
- * Account chip and panel, after Moment's top-right profile pill and the
- * full-width dropdown it opens.
+ * Account chip and the full-width panel it opens.
  */
 
 import { useEffect, useState } from "react";
@@ -14,6 +13,7 @@ import { X } from "lucide-react";
 import { address, type Address } from "@solana/kit";
 
 import { CLUSTER, rpc, shortAddress, TAGLINE } from "@/lib/config";
+import { ThemeToggle, useTheme } from "@/lib/theme";
 import { Wordmark } from "./logo";
 import { Avatar } from "./ui";
 
@@ -67,7 +67,7 @@ export function AccountChip() {
   const [open, setOpen] = useState(false);
 
   if (!ready) {
-    return <span className="h-9 w-20 rounded-lg bg-neutral-100" aria-hidden />;
+    return <span className="h-9 w-20 rounded bg-neutral-100" aria-hidden />;
   }
 
   if (!authenticated || !owner) {
@@ -75,7 +75,7 @@ export function AccountChip() {
       <button
         type="button"
         onClick={login}
-        className="shrink-0 whitespace-nowrap rounded-lg bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200 sm:px-4"
+        className="h-9 shrink-0 whitespace-nowrap rounded bg-neutral-100 px-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200 sm:px-4"
       >
         Log in
       </button>
@@ -87,9 +87,9 @@ export function AccountChip() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex shrink-0 items-center gap-2 rounded-lg bg-neutral-100 px-3 py-1.5 transition-colors hover:bg-neutral-200"
+        className="flex h-9 shrink-0 items-center gap-2 rounded bg-neutral-100 px-2.5 transition-colors hover:bg-neutral-200"
       >
-        <Avatar seed={owner} size={24} />
+        <Avatar seed={owner} size={22} />
         <span className="numeric text-sm font-medium text-neutral-900">
           {shortAddress(owner)}
         </span>
@@ -109,35 +109,34 @@ export function AccountPanel({
   const { logout } = usePrivy();
   const pathname = usePathname();
   const sol = useSolBalance(owner);
+  const [theme] = useTheme();
 
   return (
     <div className="fixed inset-0 z-[80]">
-      <div className="fixed inset-0 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
 
-      <div className="relative">
-        <div className="flex h-16 items-center justify-between bg-white px-6">
+      <div className="relative mx-auto max-w-6xl">
+        <div className="flex h-16 items-center justify-between bg-ground px-5 sm:px-6">
           <Wordmark />
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg bg-neutral-100 p-2 transition-colors hover:bg-neutral-200"
+            className="rounded bg-neutral-100 p-2 transition-colors hover:bg-neutral-200"
             aria-label="Close"
           >
             <X className="h-5 w-5 text-neutral-600" />
           </button>
         </div>
 
-        <div className="space-y-4 rounded-b-xl bg-white px-6 pb-6 pt-2 shadow-lg">
-          <div className="rounded-xl bg-neutral-100 p-4">
+        <div className="space-y-4 rounded-b-2xl bg-ground px-5 pb-6 pt-2 shadow-2xl sm:px-6">
+          <div className="rounded bg-neutral-100 p-4">
             <div className="flex items-center gap-3">
               <Avatar seed={owner} size={40} />
               <div className="min-w-0 flex-1">
                 <p className="numeric truncate text-[15px] font-semibold text-neutral-900">
                   {shortAddress(owner, 6)}
                 </p>
-                <p className="text-xs text-neutral-400">
-                  Solana · {CLUSTER}
-                </p>
+                <p className="text-xs text-neutral-400">Solana · {CLUSTER}</p>
               </div>
               <p className="numeric text-[15px] font-semibold text-neutral-900">
                 {sol === null ? "—" : `${sol.toFixed(2)} SOL`}
@@ -151,7 +150,7 @@ export function AccountPanel({
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={`block rounded-lg px-4 py-3 text-[15px] transition-colors ${
+                className={`block rounded px-4 py-3 text-[15px] transition-colors ${
                   isActivePath(pathname, item.href)
                     ? "bg-neutral-100 font-medium text-neutral-900"
                     : "text-neutral-400 hover:bg-neutral-50"
@@ -160,13 +159,17 @@ export function AccountPanel({
                 {item.label}
               </Link>
             ))}
+            <div className="flex items-center justify-between rounded px-4 py-2 text-[15px] text-neutral-400">
+              <span>{theme === "dark" ? "Dark theme" : "Light theme"}</span>
+              <ThemeToggle />
+            </div>
             <button
               type="button"
               onClick={() => {
                 onClose();
                 void logout();
               }}
-              className="block w-full rounded-lg px-4 py-3 text-left text-[15px] text-neutral-400 transition-colors hover:bg-neutral-50"
+              className="block w-full rounded px-4 py-3 text-left text-[15px] text-neutral-400 transition-colors hover:bg-neutral-50"
             >
               Log out
             </button>

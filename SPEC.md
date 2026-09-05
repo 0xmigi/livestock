@@ -380,68 +380,66 @@ app to start.
 
 ### Visual direction
 
-Livestock uses the same visual system as Moment, the user's other app. Copy it
-rather than reinventing it:
+A synthesis, not a clone. Each reference contributed one thing: OTC Desks the
+dense table and the three feature cards, Longbow the metric tracker, GitHub
+the neutral list rows, JTX and Frontier Traders the near-black ground with
+off-white ink, hairline borders, inverse solid buttons and 4px corners.
 
-- **Inter** everywhere (`next/font/google`), antialiased.
-- **White ground** with warm neutrals — never blue-grey:
-  `#FAFAF8` page tint · `#F3F3EF` chips and fills · `#E8E8E3` borders ·
-  `#8A8A82` secondary text · `#5C5C56` body text and the primary button ·
-  `#1A1A18` headings.
-- **One accent**, amber `#D97706`, used for progress, "expiring soon" and the
-  curve drawing. Status dots (green live · amber closing/awaiting · grey
-  settled) are the only other colour.
-- **Top bar**, `h-16 px-6`: mark + wordmark at the left, text nav beside it
-  (active near-black, inactive grey), a `rounded-lg` grey account chip at the
-  right with an avatar and the short address. The chip opens a full-width
-  panel with an account card, the nav rows and a Log out.
-- **Content column** `max-w-3xl` (narrower, `max-w-xl`, on focused screens),
-  `pt-8 px-4`.
-- **Section title** `text-xl font-semibold`, then a **row of filter chips**
-  (`rounded-lg px-3 py-1.5 text-xs`, active = dark fill).
-- **Cards** `rounded-xl border-neutral-200`; soft panels `bg-neutral-50`.
-- **Buttons** `rounded-lg`: primary olive-grey fill, secondary grey fill,
-  outline white with a border (Moment's bottom-pinned "Check in" style).
-- **One hero number per screen**: an uppercase `tracking-widest` label over a
-  `text-5xl font-bold` tabular figure with a quiet caption.
-- **Empty states**: soft panel, centred outline icon, one line of copy, one
-  outline button.
-- Tabular figures on anything that ticks.
+- **Palette.** Dark by default: `#141414` ground (near-black, never black) ·
+  `#1A1A1A` panels · `#202020` tiles · `#2A2A2A` hairlines · `#F2F1EE` ink ·
+  `#CFCDCC` secondary · `#A7A79F` muted. Light: white ground, `#F9F9F8`
+  panels, `#DEDDDB` borders, `#1C1C1D` ink. The `neutral` scale in
+  `globals.css` is semantic (50 is the faintest panel, 900 the heading
+  colour) so one class reads correctly on either ground.
+- **Buttons are inverse solids**: off-white on dark, near-black on light.
+  Secondary buttons carry a hairline. Nothing is orange, brown or blue.
+- **One accent**, teal (`#2FD39A` dark, `#0F9F72` light), reserved for the
+  time-elapsed bar and the live dot. Ending soon is a muted straw yellow.
+- **Rounded but sharper.** 4px on everything; 2px on tiny badges. No pills.
+- **Type.** Geist for words, Geist Mono only for figures, tickers, prices,
+  dates and addresses. No serif, no display face.
+- **The mark is a herd**: two cow faces, one behind the other.
+- **The time bar is the signature element.** Every narrative carries a thin
+  teal bar of how much of its life has elapsed.
+- **Stocks are first-class.** Logos and company names come from Jupiter's
+  token list, by mint and then by symbol. Every "converts to" carries the
+  logo. The filter is a dropdown, never a strip or a row of pills.
+- **One container, `max-w-5xl`, on every page**, header included, header
+  identical everywhere. Wide pages use two columns.
 
-Do **not** produce a dark, dense, "crypto dashboard" UI.
+Charts are deliberately absent.
 
 ### Screens
 
-**`/` — Markets.** Title, tagline, a chip row: `Live · Ended | Expiring soon ·
-Biggest vault | <one chip per stock>` (stock chips only when more than one is
-registered). Narratives are grouped by the stock they expire into, each group
-headed by the ticker and its live price. A row is: image, name, `$TICKER`,
-status dot; on the right the vault size in stock and the countdown (or the
-dollar value once ended). This is the only screen that needs to feel like a
-market.
+**`/` — Markets.** A hero with the pitch and the Create button on the left
+and a "Livestock so far" card on the right (narratives, combined FDV, locked
+in vaults), closed by a hairline. Three feature cards: just launched, top FDV,
+ending soonest. One toolbar: Live / Ended, Top FDV / Newest (Top FDV is the
+default), a Stock dropdown with logos, search. On desktop a dense table:
+narrative (image, name, `$TICKER`, status dot) · converts to (logo, ticker,
+company) · FDV over supply · vault in USD over stock · time left over the time
+bar, or the per-token payout once ended. On phones, compact rows with FDV and
+time left, the bar, and a vault-and-date line. Twenty rows, then "Show 20
+more · N left".
 
-**`/n/[address]` — the narrative.** The core screen.
-- Identity: image, name, `$TICKER · expires into TSLAx · status`
-- Hero: `TIME REMAINING` over a large countdown and the conversion date.
-  After the date: `TRADING CLOSED / Settling`; once settled:
-  `EACH TOKEN CONVERTS TO / 0.00041 TSLAx`; when fully redeemed: `Done`.
-- Two numbers: **vault** (what it converts into, with ≈ USD) and **supply**
-  (with the next token's price).
-- Action card: dollar input with `$10 · $50 · $100` presets → tokens received,
-  stock paid, average per token, creator fee and **price impact**; Buy/Sell
-  segmented control once the wallet holds tokens; the wallet's stock balance;
-  an honest warning when it cannot cover the buy. After expiry a single
-  **Convert** action showing exactly how much stock the wallet gets.
-- Position: tokens held, and what they are worth at expiry if nothing changes.
-- About: description, expiry (marked immutable), created, creator with
-  holdings and share of supply, fee, exit tax, mint address, links.
+**`/n/[address]` — the narrative.** Identity row: image, name, `$TICKER ·
+converts to [logo] TSLAx · status`. A panel with the hero number (time
+remaining, or Settling / each token converts to / Done) over the full-width
+time bar with launch and expiry dates at its ends. The Overview grid: vault,
+supply, next token or status, per token now, expires, creator fee, exit tax,
+creator holds; footer with creator and mint links. Action card by phase:
+dollar input with presets → tokens, stock paid, average, fee, price impact;
+Buy/Sell once the wallet holds tokens; Settle after the date; Convert once
+settled. Position grid for holders. About card only when the metadata has a
+description or links.
 
-**`/create`.** Stock picker (chips), image, name and ticker, description,
-expiry presets (1 week / 2 weeks / 1 month) with the resulting date, links, and
-a collapsible **price curve** card: a drawing of price against supply, the
-dollar price of the first token, at 500k and at 1M, and what the first 100
-tokens cost. Curve defaults derive from the stock's live price. One
-transaction builds the mint, the vault and the narrative.
+**`/create`.** Four steps with a progress line and back/next labels, and a
+bar pinned to the bottom that carries the running summary and the one action.
+Stock (cards with logo and price; skipped when only one is registered) →
+Story (live preview card, name, ticker, image, description, links) → Date
+(1 week / 2 weeks / 1 month as cards with the resulting date, the collapsed
+price-curve card) → Review (preview, a Terms grid, Launch). One transaction
+builds the mint, the vault and the narrative.
 
 ### Metadata
 
@@ -564,3 +562,34 @@ client are identical to mainnet and only the addresses change.
 4. **Metadata permanence.** Blob is plain HTTPS, which is what launchpads do,
    but the image and JSON live on our account. Decide whether to mirror to a
    permanent store before mainnet.
+5. **Graduation ratchet.** Today the expiry is fixed at creation and the
+   promise is "it resolves on a date". The alternative is "it resolves within a
+   fixed time of the story stalling": each time the vault crosses an escalating
+   threshold the expiry moves out by a fixed step, and a narrative that stops
+   attracting new money converts on its current date. Long-lived narratives are
+   earned rather than chosen. Rules that would need pinning down:
+   - Measure the **vault in stock units**, never market cap. Market cap is half
+     air on any rising curve and a dollar figure moves with the stock; the vault
+     only grows when new money arrives.
+   - **Thresholds escalate** (doubling or similar) so every extension is paid
+     for by fresh inflow. A fixed bar would extend forever once crossed.
+   - The extension **adds a fixed step to the current expiry** (say 30 days),
+     not "30 days from now", so the page can always show the date if nothing
+     else happens.
+   - **Lower `MAX_DURATION_SECS`** at creation (30 days rather than 90) so a
+     long life can only be earned.
+   - Known bound, not prevention: a whale can buy at the top to cross a
+     threshold and extend everyone's lock. Escalation makes repeating it
+     expensive and the exit tax pays the holders they locked in. Add to §9.
+   - Cost: three fields on `Narrative` (level, next threshold, step), one
+     check at the end of `buy`, a layout version bump, client and LiteSVM cases.
+   - UI: a second live number under the countdown, vault against the next
+     threshold in stock. This is the honest version of pump.fun's bonding bar.
+6. **Exit tax switch at graduation.** Before the first threshold the sell tax
+   is 0%, so the early phase is a deposit anyone can leave at roughly cost
+   (tax-free sells down the curve refund the last money in, no cost-basis
+   tracking needed). Crossing the first threshold switches the tax on for
+   good. This blunts the creator front-run in §9 (walk out at cost if they
+   dump), gives the crowd a concrete line to push for, and lets a narrative that
+   never catches on end quietly. Depends on 5, or on a single graduation
+   threshold if the ratchet is not adopted.

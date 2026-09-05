@@ -54,10 +54,26 @@ cargo build-sbf && solana program deploy target/deploy/narrative_markets.so --pr
 Do not pass `target/deploy/narrative_markets-keypair.json` as the program id:
 `cargo build-sbf` generates that file and it is a different, unrelated key.
 
+Devnet has ten stand-in stock mints named after real xStocks (classic SPL,
+8 decimals, minted by the deployer wallet). Put them in `app/.env.local` so
+the stock picker has something to show:
+
+```
+NEXT_PUBLIC_STOCKS=TSLAx:8gfqWFan4bfnm3QXFC67VStWpf31ZzJK5uHT6Jiip2wg:8:353,NVDAx:AysPNDmoUrcr2RbtCNn5fMfLKPmKRvvoxAXTiT61k5dh:8:230,AAPLx:FjBzTxa57GzcPakBb7TPed2HM3SaYebhNs5RHVGu6nub:8:320,SPYx:CVgVgVpBGskc6MqZGLoCtHzSRTznWtJCcB5h9LM1cphW:8:770,MSTRx:39HoeQsujcqFEdUUX1gngA1jb4w1aX2Txs2ZEuYzWXLT:8:143,GOOGLx:uVQdBmMn2QfmwttG5Hi8697DGUXFD136xcDKQCGPAVB:8:337,AMZNx:4MMLbN6Wy2TPHE3e4MEmZt4s927ERwBVywDG28qQWne4:8:258,METAx:HjDxAEZ67VbTmfXcBK2uzCAGSGQmJ7VsXanrrch5dU7N:8:617,COINx:Eg6usUHZSeytKyYWyfKACjuCwnE4Q5zZR7MVrrnTqXj4:8:185,HOODx:E28rNA15CnXpZpWSE11zZ8C8JnsDPzRBE9ofqMQa5KLE:8:122
+```
+
 Seed devnet with a few narratives:
 
 ```bash
 RPC_URL=... STOCK_MINT=... pnpm --filter @nm/scripts run seed
+```
+
+To exercise expiry and redemption on devnet without waiting a week, seed one
+narrative that expires in an hour (the program's minimum), then settle and
+convert it from the app once the countdown ends:
+
+```bash
+HOURS=1 STOCK_MINT=... pnpm --filter @nm/scripts run seed
 ```
 
 Status: **building.** See §14 of the spec for what is done and what remains.

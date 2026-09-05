@@ -1,74 +1,42 @@
 "use client";
 
 /**
- * Primitives, styled after the Moment app: white ground, warm neutrals,
- * `rounded-lg` controls, `rounded-xl` cards, one amber accent.
+ * Primitives. Every colour comes from the semantic neutral scale in
+ * globals.css, so a component reads correctly on the dark and the light
+ * ground without knowing which one it is on.
  */
 
 import { Status } from "@nm/client";
 
+import type { StockInfo } from "@/lib/config";
+import { useStockMeta } from "@/lib/logos";
+
 // --- text -----------------------------------------------------------------
 
-/** Uppercase, letter-spaced micro-label. Sits above a number. */
-export function Label({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <div className={`label ${className}`}>{children}</div>;
-}
-
-/** A small label over a medium number — the page's core unit. */
-export function Stat({
-  label,
-  value,
-  sub,
-  align = "left",
-}: {
-  label: string;
-  value: React.ReactNode;
-  sub?: React.ReactNode;
-  align?: "left" | "center";
-}) {
-  const alignment = align === "center" ? "text-center" : "";
-  return (
-    <div className={alignment}>
-      <div className="text-xs uppercase tracking-widest text-neutral-400">
-        {label}
-      </div>
-      <div className="numeric mt-1 text-2xl font-semibold tracking-tight text-neutral-900">
-        {value}
-      </div>
-      {sub ? <div className="mt-0.5 text-xs text-neutral-400">{sub}</div> : null}
-    </div>
-  );
-}
-
 /**
- * The one hero number a screen is allowed. Copied from Moment's home:
- * `TIME IN THE MOMENT` over a huge bold figure with a quiet caption.
+ * The one hero number a screen is allowed: a quiet label over a huge figure
+ * with a caption.
  */
 export function Hero({
   label,
   value,
   sub,
   muted = false,
+  align = "center",
 }: {
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
   muted?: boolean;
+  align?: "center" | "left";
 }) {
+  const a = align === "center" ? "text-center" : "text-left";
   return (
-    <div className="space-y-2 text-center">
-      <p className="text-sm uppercase tracking-widest text-neutral-400">
-        {label}
-      </p>
+    <div className={`space-y-2 ${a}`}>
+      <p className="text-sm text-neutral-400">{label}</p>
       <p
-        className={`numeric text-4xl font-bold tracking-tight sm:text-5xl ${
-          muted ? "text-neutral-200" : "text-neutral-900"
+        className={`numeric text-5xl font-semibold tracking-tight sm:text-6xl ${
+          muted ? "text-neutral-300" : "text-neutral-900"
         }`}
       >
         {value}
@@ -89,7 +57,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5 ${className}`}
+      className={`rounded border border-neutral-200 bg-neutral-50 p-4 sm:p-5 ${className}`}
     >
       {children}
     </div>
@@ -105,8 +73,87 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <div className={`rounded-xl bg-neutral-50 px-4 py-3.5 ${className}`}>
+    <div className={`rounded bg-neutral-100 px-4 py-3.5 ${className}`}>
       {children}
+    </div>
+  );
+}
+
+/**
+ * A soft panel holding a grid of small tiles: a title pill and a quiet aside
+ * on top, a 2×4 grid of label-over-figure tiles, one sentence underneath.
+ */
+export function Overview({
+  title,
+  aside,
+  children,
+  footer,
+  columns = 4,
+  className = "",
+}: {
+  title?: React.ReactNode;
+  aside?: React.ReactNode;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  columns?: 2 | 3 | 4;
+  className?: string;
+}) {
+  const cols = {
+    2: "grid-cols-2",
+    3: "grid-cols-2 sm:grid-cols-3",
+    4: "grid-cols-2 sm:grid-cols-4",
+  }[columns];
+  return (
+    <section className={`rounded bg-neutral-50 p-2.5 sm:p-3 ${className}`}>
+      {title || aside ? (
+        <div className="mb-2.5 flex items-center justify-between gap-3 px-0.5">
+          {title ? (
+            <span className="rounded bg-neutral-200 px-2.5 py-1 text-sm font-medium text-neutral-900">
+              {title}
+            </span>
+          ) : (
+            <span />
+          )}
+          {aside ? (
+            <span className="numeric min-w-0 truncate text-sm text-neutral-400">
+              {aside}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className={`grid gap-2 ${cols}`}>{children}</div>
+      {footer ? (
+        <div className="mt-3 px-1 pb-0.5 text-sm leading-relaxed text-neutral-400">
+          {footer}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** One cell of an `Overview`: a quiet label over a bold figure. */
+export function Tile({
+  label,
+  value,
+  sub,
+  className = "",
+}: {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`min-w-0 rounded bg-neutral-100 px-3 py-3 ${className}`}>
+      <div className="truncate text-[13px] text-neutral-400">{label}</div>
+      <div className="numeric mt-1 truncate text-base font-semibold tracking-tight text-neutral-900 sm:text-[17px]">
+        {value}
+      </div>
+      {sub ? (
+        <div className="numeric mt-0.5 text-xs leading-snug text-neutral-400">
+          {sub}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -123,19 +170,17 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl bg-neutral-50 px-6 py-10 text-center">
+    <div className="rounded bg-neutral-50 px-6 py-14 text-center">
       {icon ? (
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center text-neutral-300">
           {icon}
         </div>
       ) : null}
-      <p className="text-base font-medium text-neutral-900">{title}</p>
+      <p className="display text-lg text-neutral-900">{title}</p>
       {body ? (
-        <p className="mx-auto mt-1.5 max-w-md text-sm text-neutral-400">
-          {body}
-        </p>
+        <p className="mx-auto mt-2 max-w-md text-sm text-neutral-400">{body}</p>
       ) : null}
-      {action ? <div className="mt-5">{action}</div> : null}
+      {action ? <div className="mt-6">{action}</div> : null}
     </div>
   );
 }
@@ -149,28 +194,30 @@ export function Button({
   className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "outline" | "ghost";
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "accent";
   size?: "sm" | "md" | "lg";
 }) {
   const variants = {
     primary:
-      "bg-primary text-white hover:bg-primary-hover disabled:bg-neutral-300",
+      "bg-primary text-on-primary hover:bg-primary-hover disabled:bg-neutral-200 disabled:text-neutral-400",
+    accent:
+      "bg-primary text-on-primary hover:bg-primary-hover disabled:bg-neutral-200 disabled:text-neutral-400",
     secondary:
-      "bg-neutral-100 text-neutral-900 hover:bg-neutral-200 disabled:text-neutral-400",
+      "border border-neutral-200 bg-neutral-50 text-neutral-900 hover:bg-neutral-100 disabled:text-neutral-400",
     outline:
-      "bg-white text-neutral-900 border border-neutral-200 hover:bg-neutral-50 disabled:text-neutral-400",
+      "border border-neutral-200 bg-transparent text-neutral-900 hover:bg-neutral-50 disabled:text-neutral-400",
     ghost: "text-neutral-600 hover:text-neutral-900 disabled:text-neutral-400",
   };
   const sizes = {
     sm: "px-3 py-1.5 text-xs",
-    md: "px-4 py-2 text-sm",
-    lg: "px-4 py-3 text-sm",
+    md: "px-3.5 py-1.5 text-sm",
+    lg: "px-4 py-2.5 text-[15px]",
   };
 
   return (
     <button
       type="button"
-      className={`rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`rounded font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >
       {children}
@@ -178,34 +225,46 @@ export function Button({
   );
 }
 
-/** Filter chip, as on Moment's Gallery and Activities screens. */
+/** Filter pill, with an optional count. */
 export function Chip({
   active = false,
   icon,
+  count,
   children,
   className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   active?: boolean;
   icon?: React.ReactNode;
+  count?: number;
 }) {
   return (
     <button
       type="button"
-      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-sm transition-colors ${
+      aria-pressed={active}
+      className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded py-1.5 pl-3 pr-3 text-sm font-medium transition-colors ${
         active
-          ? "bg-neutral-200 font-semibold text-neutral-900"
-          : "bg-neutral-100 font-medium text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
+          ? "bg-neutral-900 text-ground"
+          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900"
       } ${className}`}
       {...props}
     >
       {icon}
       {children}
+      {count !== undefined ? (
+        <span
+          className={`mono rounded-full px-1.5 text-[11px] leading-4 ${
+            active ? "bg-ground/20 text-ground" : "bg-neutral-200 text-neutral-400"
+          }`}
+        >
+          {count}
+        </span>
+      ) : null}
     </button>
   );
 }
 
-/** Underline tabs — the primary switch on a list screen. */
+/** Underline tabs. */
 export function Tabs<T extends string>({
   value,
   options,
@@ -245,27 +304,31 @@ export function Tabs<T extends string>({
   );
 }
 
-/** A segmented control: two or three options, one active. */
+/** A segmented control: two to four options, one active. */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  size = "md",
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
+  size?: "sm" | "md";
 }) {
+  const pad = size === "sm" ? "h-9 px-3 text-sm" : "py-2.5 px-4 text-sm";
   return (
-    <div className="flex gap-1 rounded-xl bg-neutral-100 p-1 text-sm">
+    <div className="flex overflow-hidden rounded border border-neutral-200 bg-neutral-50">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`flex-1 rounded-lg py-2.5 font-semibold transition-colors ${
+          className={`flex-1 whitespace-nowrap border-r border-neutral-200 font-medium transition-colors last:border-r-0 ${pad} ${
             value === o.value
-              ? "bg-white text-neutral-900 shadow-sm"
-              : "text-neutral-400 hover:text-neutral-600"
+              ? "bg-neutral-100 text-neutral-900"
+              : "text-neutral-400 hover:text-neutral-900"
           }`}
         >
           {o.label}
@@ -276,20 +339,27 @@ export function Segmented<T extends string>({
 }
 
 export const inputClass =
-  "w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-3 text-[15px] text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-400";
+  "w-full rounded border border-neutral-200 bg-neutral-50 px-3.5 py-3 text-[15px] text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-400";
 
 export function Field({
   label,
   children,
   hint,
+  optional = false,
 }: {
   label: string;
   children: React.ReactNode;
   hint?: React.ReactNode;
+  optional?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium text-neutral-600">{label}</span>
+      <span className="text-sm font-medium text-neutral-900">
+        {label}
+        {optional ? (
+          <span className="ml-1.5 font-normal text-neutral-400">optional</span>
+        ) : null}
+      </span>
       <div className="mt-1.5">{children}</div>
       {hint ? (
         <span className="mt-1.5 block text-xs text-neutral-400">{hint}</span>
@@ -306,14 +376,14 @@ export function Notice({
   children: React.ReactNode;
 }) {
   const styles = {
-    error: "border-red-200 bg-red-50 text-red-900",
-    info: "border-neutral-200 bg-neutral-50 text-neutral-600",
-    success: "border-green-200 bg-green-50 text-green-900",
-    warning: "border-yellow-200 bg-yellow-50 text-yellow-800",
+    error: "bg-danger-fill text-danger",
+    info: "bg-neutral-100 text-neutral-600",
+    success: "bg-success-fill text-success",
+    warning: "bg-warn-fill text-neutral-900",
   };
   return (
     <div
-      className={`rounded-lg border px-3.5 py-2.5 text-sm leading-relaxed ${styles[kind]}`}
+      className={`rounded px-3.5 py-2.5 text-sm leading-relaxed ${styles[kind]}`}
     >
       {children}
     </div>
@@ -325,10 +395,7 @@ export function Notice({
 export type Phase = "live" | "closing" | "settling" | "redeemable" | "settled";
 
 /** Collapses on-chain status plus the clock into what a person cares about. */
-export function phaseOf(
-  status: Status,
-  secondsRemaining: number,
-): Phase {
+export function phaseOf(status: Status, secondsRemaining: number): Phase {
   if (status === Status.Settled) return "settled";
   if (status === Status.Expired) return "redeemable";
   if (secondsRemaining <= 0) return "settling";
@@ -338,12 +405,8 @@ export function phaseOf(
 
 const PHASES: Record<Phase, { dot: string; text: string; label: string }> = {
   live: { dot: "bg-live", text: "text-neutral-600", label: "Live" },
-  closing: { dot: "bg-closing", text: "text-neutral-600", label: "Expiring soon" },
-  settling: {
-    dot: "bg-closing",
-    text: "text-neutral-600",
-    label: "Awaiting settlement",
-  },
+  closing: { dot: "bg-closing", text: "text-neutral-600", label: "Ending soon" },
+  settling: { dot: "bg-closing", text: "text-neutral-600", label: "Settling" },
   redeemable: { dot: "bg-accent", text: "text-neutral-600", label: "Redeemable" },
   settled: { dot: "bg-settled", text: "text-neutral-400", label: "Settled" },
 };
@@ -351,13 +414,15 @@ const PHASES: Record<Phase, { dot: string; text: string; label: string }> = {
 export function StatusDot({
   phase,
   pulse = false,
+  className = "",
 }: {
   phase: Phase;
   pulse?: boolean;
+  className?: string;
 }) {
   const p = PHASES[phase];
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs ${p.text}`}>
+    <span className={`inline-flex items-center gap-1.5 text-xs ${p.text} ${className}`}>
       <span className="relative flex h-2 w-2">
         {pulse && phase === "live" ? (
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-live opacity-75" />
@@ -368,6 +433,48 @@ export function StatusDot({
     </span>
   );
 }
+
+/**
+ * The signature element: how much of a narrative's life has elapsed. Amber
+ * is reserved for this and for state, nothing else on the page uses it.
+ */
+export function TimeBar({
+  createdTs,
+  expiryTs,
+  now,
+  phase,
+  className = "",
+}: {
+  createdTs: bigint;
+  expiryTs: bigint;
+  now: number;
+  phase: Phase;
+  className?: string;
+}) {
+  const start = Number(createdTs);
+  const end = Number(expiryTs);
+  const total = Math.max(1, end - start);
+  const elapsed = Math.min(1, Math.max(0, (now - start) / total));
+  const done = phase === "settling" || phase === "redeemable" || phase === "settled";
+  const fill = done ? "bg-neutral-300" : "bg-accent";
+  return (
+    <div
+      className={`h-1 w-full overflow-hidden rounded-full bg-neutral-200 ${className}`}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(elapsed * 100)}
+      aria-label="Time elapsed"
+    >
+      <div
+        className={`h-full rounded-full ${fill}`}
+        style={{ width: `${done ? 100 : elapsed * 100}%` }}
+      />
+    </div>
+  );
+}
+
+// --- identity -------------------------------------------------------------
 
 /** A deterministic soft colour for an address, used as an avatar. */
 export function Avatar({
@@ -390,9 +497,38 @@ export function Avatar({
       style={{
         width: size,
         height: size,
-        background: `linear-gradient(135deg, hsl(${hue} 45% 78%), hsl(${(hue + 40) % 360} 40% 60%))`,
+        background: `linear-gradient(135deg, hsl(${hue} 45% 70%), hsl(${(hue + 40) % 360} 40% 50%))`,
       }}
       aria-hidden="true"
     />
+  );
+}
+
+/** A stock's logo from the token list, or a lettermark while none is known. */
+export function StockLogo({
+  stock,
+  size = 20,
+  className = "",
+}: {
+  stock: StockInfo;
+  size?: number;
+  className?: string;
+}) {
+  const meta = useStockMeta();
+  const src = meta[stock.mint]?.icon;
+  const letter = stock.symbol.replace(/x$/i, "").charAt(0).toUpperCase() || "?";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 font-semibold text-neutral-600 ${className}`}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.48) }}
+      aria-hidden="true"
+    >
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" width={size} height={size} className="h-full w-full object-cover" />
+      ) : (
+        letter
+      )}
+    </span>
   );
 }

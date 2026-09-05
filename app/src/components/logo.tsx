@@ -1,44 +1,57 @@
 /**
- * The Livestock mark: a single rising stroke, drawn the way Moment's mark is —
- * one path, round caps, `currentColor` so it takes the text colour around it.
+ * The Livestock mark: two cow faces, one in front of the other. A herd, not a
+ * cow. Solid shapes so it reads at 24px; features are cut out in the ground
+ * colour.
  */
+function Cow({ x, y, opacity = 1 }: { x: number; y: number; opacity?: number }) {
+  return (
+    <g transform={`translate(${x} ${y})`} opacity={opacity}>
+      {/* horns */}
+      <path d="M3 5.5C1.5 4.5 1 2.5 1.5 1C3.5 1.5 4.5 3 4.8 4.5Z" fill="currentColor" />
+      <path d="M15 5.5C16.5 4.5 17 2.5 16.5 1C14.5 1.5 13.5 3 13.2 4.5Z" fill="currentColor" />
+      {/* ears */}
+      <ellipse cx="1.6" cy="9" rx="1.8" ry="1.2" fill="currentColor" />
+      <ellipse cx="16.4" cy="9" rx="1.8" ry="1.2" fill="currentColor" />
+      {/* face */}
+      <rect x="3" y="3.5" width="12" height="13.5" rx="5" fill="currentColor" />
+      {/* eyes */}
+      <circle cx="6.6" cy="8.6" r="1.1" fill="var(--ground)" />
+      <circle cx="11.4" cy="8.6" r="1.1" fill="var(--ground)" />
+      {/* muzzle */}
+      <rect x="5.2" y="11.6" width="7.6" height="4" rx="2" fill="var(--ground)" />
+      <circle cx="7.4" cy="13.6" r="0.75" fill="currentColor" />
+      <circle cx="10.6" cy="13.6" r="0.75" fill="currentColor" />
+    </g>
+  );
+}
+
 export function Logo({
-  width = 30,
-  height = 21,
+  size = 28,
   className = "",
 }: {
-  width?: number;
-  height?: number;
+  size?: number;
   className?: string;
 }) {
   return (
     <svg
-      width={width}
-      height={height}
-      viewBox="0 0 39 27"
-      fill="none"
+      width={size}
+      height={size}
+      viewBox="0 0 28 28"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden="true"
     >
-      <path
-        d="M3.5 22.5 L11 13.5 L17.5 18.5 L27 6.5 L30.5 11 L35.5 4"
-        stroke="currentColor"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <Cow x={9.5} y={0.5} opacity={0.45} />
+      <Cow x={0.5} y={9.5} />
     </svg>
   );
 }
 
 export function Wordmark({ className = "" }: { className?: string }) {
   return (
-    <span className={`flex items-center gap-2 ${className}`}>
-      <Logo className="text-neutral-900" />
-      <span className="text-xl font-bold tracking-tight text-neutral-900 sm:text-2xl">
-        Livestock
-      </span>
+    <span className={`flex items-center gap-2.5 text-neutral-900 ${className}`}>
+      <Logo className="text-accent" size={28} />
+      <span className="text-lg font-semibold tracking-tight">Livestock</span>
     </span>
   );
 }

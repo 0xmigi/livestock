@@ -4,8 +4,11 @@ import { PrivyProvider } from "@privy-io/react-auth";
 import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 
 import { CLUSTER, PRIVY_APP_ID, rpc, rpcSubscriptions } from "@/lib/config";
+import { useTheme } from "@/lib/theme";
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  const [theme] = useTheme();
+
   if (!PRIVY_APP_ID) {
     return (
       <div className="mx-auto max-w-md px-6 py-20 font-sans">
@@ -22,8 +25,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={PRIVY_APP_ID}
       config={{
-        loginMethods: ["email", "wallet"],
-        // Email users get a Solana wallet without ever seeing a seed phrase.
+        // Login methods come from the Privy dashboard. Listing them here would
+        // override it, which is how Google and X went missing.
+        // Email and social users get a Solana wallet without ever seeing a seed phrase.
         embeddedWallets: {
           solana: { createOnLogin: "users-without-wallets" },
           // Suppress Privy's own confirm-and-dismiss modal. The user already
@@ -33,8 +37,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
           showWalletUIs: false,
         },
         appearance: {
-          theme: "light",
-          accentColor: "#5c5c56",
+          // A hex theme paints the modal on our own ground; the rest of the
+          // palette comes from the --privy-* variables in globals.css.
+          theme: theme === "dark" ? "#141414" : "#ffffff",
+          accentColor: theme === "dark" ? "#f2f1ee" : "#1b1b1b",
+          landingHeader: "Log in to Livestock",
           walletChainType: "solana-only",
           walletList: ["detected_solana_wallets", "phantom", "solflare"],
         },
