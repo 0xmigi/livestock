@@ -1,0 +1,8 @@
+target
+app/.next
+app/.uploads
+client/dist
+node_modules
+**/node_modules
+.env
+.env*.local

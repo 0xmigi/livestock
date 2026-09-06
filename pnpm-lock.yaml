@@ -99,13 +99,13 @@ importers:
       '@solana/kit':
         specifier: ^8.2.0
         version: 8.2.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      tsx:
+        specifier: ^4.20.7
+        version: 4.23.13
     devDependencies:
       '@types/node':
         specifier: ^24.10.1
         version: 24.13.3
-      tsx:
-        specifier: ^4.20.7
-        version: 4.23.13
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "packages": { "node": "22" },
+  "steps": {
+    "build": { "commands": ["pnpm run build:client"] }
+  },
+  "deploy": {
+    "startCommand": "pnpm --filter @nm/scripts run keeper"
+  }
+}
