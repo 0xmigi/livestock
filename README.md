@@ -85,8 +85,12 @@ from your CLI wallet (`KEYPAIR` overrides):
 pnpm --filter @nm/scripts run keeper
 ```
 
-In production `app/vercel.json` schedules `/api/keeper` every minute; set
-`KEEPER_KEYPAIR` (a funded key) and `CRON_SECRET` in the environment. New
+In production, run the same script as a long-lived process (Railway, or any
+box): set `KEEPER_KEYPAIR` to a funded keypair as a JSON byte array and
+`RPC_URL`, and start it with `pnpm --filter @nm/scripts run keeper`. Vercel's
+free tier only allows daily crons, so there is no cron there; `/api/keeper`
+still does one pass per call for any external scheduler, guarded by
+`CRON_SECRET` as a bearer token. New
 narrative mints name their narrative as permanent delegate, which is what lets
 the program burn on holders' behalf; narratives created before that keep the
 manual Redeem button.

@@ -1,7 +1,8 @@
 /**
  * Runs the keeper in a loop: expires narratives whose date has passed and
- * pays every holder out in the stock. Uses the Solana CLI keypair (or
- * KEYPAIR) to pay fees.
+ * pays every holder out in the stock. Fees come from KEEPER_KEYPAIR (a JSON
+ * byte array, for hosts like Railway), else the file at KEYPAIR, else the
+ * Solana CLI keypair.
  *
  *   RPC_URL=... pnpm --filter @nm/scripts run keeper
  *
@@ -44,8 +45,9 @@ const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
 const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
 
 async function loadPayer(): Promise<KeyPairSigner> {
-  const path = process.env.KEYPAIR ?? join(homedir(), ".config", "solana", "id.json");
-  return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(readFileSync(path, "utf8")) as number[]));
+  const inline = process.env.KEEPER_KEYPAIR;
+  const raw = inline ?? readFileSync(process.env.KEYPAIR ?? join(homedir(), ".config", "solana", "id.json"), "utf8");
+  return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(raw) as number[]));
 }
 
 async function send(payer: KeyPairSigner, instructions: Instruction[]): Promise<string> {

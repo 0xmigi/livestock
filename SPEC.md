@@ -559,8 +559,8 @@ and client are identical to mainnet and only the addresses change.
 3. `expire` + freeze + authority revocation
 4. `redeem` + the dust sweep, and `convert`: the same payout for any holder
    without their signature, through the mint's permanent delegate. A keeper
-   (`scripts/src/keeper.ts` locally, `/api/keeper` on a schedule in
-   production) expires narratives and pays every holder the moment the date
+   (`scripts/src/keeper.ts`, run locally or as a long-lived process in
+   production; `/api/keeper` does one pass for an external scheduler) expires narratives and pays every holder the moment the date
    passes, so a holder never has to claim.
 5. Full LiteSVM suite — every row in §9's "closed by design" table, plus the
    whole lifecycle against a Token-2022 stock and the three mint rejections

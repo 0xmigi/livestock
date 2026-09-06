@@ -3,8 +3,10 @@
  * date and pays every holder out in the stock. See client/src/keeper.ts.
  *
  * Fees come from KEEPER_KEYPAIR (on devnet, the faucet's key stands in: it
- * collects SOL from every buy). Vercel Cron sends the CRON_SECRET as a bearer
- * token; without one configured, the route only answers locally.
+ * collects SOL from every buy). An external scheduler sends CRON_SECRET as a
+ * bearer token; without one configured, the route only answers outside
+ * production. The keeper script is the primary way to run this; the route
+ * exists for hosts that cannot keep a process alive.
  */
 
 import { NextResponse } from "next/server";
