@@ -35,8 +35,9 @@ const DEFAULT_WS =
     ? "wss://api.mainnet-beta.solana.com"
     : "wss://api.devnet.solana.com";
 
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? DEFAULT_RPC;
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? DEFAULT_WS;
+// An empty variable counts as unset: hosts often define every name at once.
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_RPC;
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || DEFAULT_WS;
 
 export const rpc = createSolanaRpc(RPC_URL);
 export const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
