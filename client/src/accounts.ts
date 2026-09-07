@@ -1,7 +1,7 @@
 /**
  * Decoder for the `Narrative` account.
  *
- * The layout mirrors `programs/narrative_markets/src/state.rs`. The account
+ * The layout mirrors `programs/livestock/src/state.rs`. The account
  * starts with a 2-byte `[discriminator, version]` header, so every offset here
  * is the Rust struct offset plus 2.
  */
@@ -13,11 +13,12 @@ const HEADER = 2;
 
 export const NARRATIVE_DISCRIMINATOR = 1;
 /**
- * Layout version. The account size did not change between v1 and v2, so
- * without checking this an older account decodes into the wrong fields
- * instead of being rejected.
+ * Layout version. The account size has never changed, so without checking
+ * this an older account decodes into the wrong fields instead of being
+ * rejected. v3 replaced the linear curve's parameters with the pump.fun
+ * curve's two reserves.
  */
-export const NARRATIVE_VERSION = 2;
+export const NARRATIVE_VERSION = 3;
 export const NARRATIVE_ACCOUNT_LEN = HEADER + 280;
 
 export enum Status {
@@ -41,8 +42,10 @@ export type Narrative = {
   symbol: string;
   createdTs: bigint;
   expiryTs: bigint;
-  basePrice: bigint;
-  slope: bigint;
+  /** The curve's virtual stock reserve, in stock base units. */
+  virtualStock: bigint;
+  /** The curve's virtual token reserve, in whole tokens. */
+  virtualTokens: bigint;
   supply: bigint;
   /** Frozen at expiry — the redeem denominator. */
   finalSupply: bigint;
@@ -94,8 +97,8 @@ export function decodeNarrative(data: Uint8Array): Narrative {
     symbol: text.decode(data.subarray(HEADER + 192, HEADER + 192 + symbolLen)),
     createdTs: v.getBigInt64(HEADER + 202, true),
     expiryTs: v.getBigInt64(HEADER + 210, true),
-    basePrice: v.getBigUint64(HEADER + 218, true),
-    slope: v.getBigUint64(HEADER + 226, true),
+    virtualStock: v.getBigUint64(HEADER + 218, true),
+    virtualTokens: v.getBigUint64(HEADER + 226, true),
     supply: v.getBigUint64(HEADER + 234, true),
     finalSupply: v.getBigUint64(HEADER + 242, true),
     finalVault: v.getBigUint64(HEADER + 250, true),

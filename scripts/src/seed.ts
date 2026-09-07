@@ -25,7 +25,8 @@ import {
   getCreateNarrativeInstruction,
   getCreateNarrativeMintInstructions,
   getNarrativeMintSize,
-  usdToStock,
+  initialVirtualStock,
+  openingState,
 } from "@nm/client";
 import {
   findAssociatedTokenPda,
@@ -57,6 +58,7 @@ const RPC_URL = process.env.RPC_URL ?? "https://api.devnet.solana.com";
 const WS_URL = process.env.WS_URL ?? "wss://api.devnet.solana.com";
 const STOCK_DECIMALS = 8;
 const STOCK_PRICE_USD = Number(process.env.STOCK_PRICE_USD ?? 250);
+const SOL_PRICE_USD = Number(process.env.SOL_PRICE_USD ?? 150);
 
 const rpc = createSolanaRpc(RPC_URL);
 const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
@@ -131,10 +133,10 @@ const HOURS = Number(process.env.HOURS ?? 0);
 
 const NARRATIVES =
   HOURS > 0
-    ? [{ name: "Lifecycle test", symbol: "LIFE", hours: HOURS, buy: 250 }]
+    ? [{ name: "Lifecycle test", symbol: "LIFE", hours: HOURS, buy: 25_000_000 }]
     : [
-        { name: "Robotaxi Austin", symbol: "RBTX", hours: 14 * 24, buy: 400 },
-        { name: "FSD v14", symbol: "FSD", hours: 7 * 24, buy: 150 },
+        { name: "Robotaxi Austin", symbol: "RBTX", hours: 14 * 24, buy: 40_000_000 },
+        { name: "FSD v14", symbol: "FSD", hours: 7 * 24, buy: 15_000_000 },
         { name: "Optimus Preorders", symbol: "OPTI", hours: 30 * 24, buy: 0 },
       ];
 
@@ -151,9 +153,9 @@ async function main(): Promise<void> {
   const stockTokenProgram = await stockTokenProgramOf(stockMint);
   console.log(`token prog  ${stockTokenProgram}\n`);
 
-  const basePrice = usdToStock(0.1, STOCK_PRICE_USD, STOCK_DECIMALS);
-  const slope =
-    (usdToStock(10, STOCK_PRICE_USD, STOCK_DECIMALS) - basePrice) / 1_000_000n;
+  // The curve's one parameter: 30 SOL in the stock, pump.fun's opening
+  // virtual liquidity.
+  const virtualStock = initialVirtualStock(SOL_PRICE_USD, STOCK_PRICE_USD, STOCK_DECIMALS);
 
   for (const spec of NARRATIVES) {
     // The mint is a keypair now, so a fresh one is generated per narrative and
@@ -203,8 +205,7 @@ async function main(): Promise<void> {
         name: spec.name,
         symbol: spec.symbol,
         expiryTs,
-        basePrice,
-        slope,
+        virtualStock,
         feeBps: 100,
         sellTaxBps: 1_000,
       }),
@@ -213,7 +214,7 @@ async function main(): Promise<void> {
 
     if (spec.buy > 0) {
       const tokens = BigInt(spec.buy);
-      const cost = buyCost(0n, tokens, { basePrice, slope });
+      const cost = buyCost(openingState(virtualStock), tokens);
       const total = cost + applyBps(cost, 100);
 
       const stockAta = await ata(stockMint, signer.address, stockTokenProgram);

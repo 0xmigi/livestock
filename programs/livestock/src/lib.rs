@@ -1,4 +1,4 @@
-//! # Narrative Markets
+//! # Livestock
 //!
 //! Short-lived tokens about a specific story concerning a public company, which
 //! **expire into that company's tokenized stock**.
@@ -34,7 +34,7 @@ use pinocchio::{
 };
 
 /// On-chain address of this program.
-pub const ID: Address = Address::from_str_const("7WbnkZ57UvAPzy3rNqErZW57xnhUdnqwXnDm34dGV2SX");
+pub const ID: Address = Address::from_str_const("5X7RTCFFLgCpsRiskzm1gBEQmbzBEL39H6WpN9YzSizB");
 
 entrypoint!(process_instruction);
 
@@ -96,6 +96,7 @@ impl ToStr for error::MarketError {
             InvalidInstructionData => "malformed instruction data",
             AlreadyInitialized => "account already initialized",
             InsufficientSupply => "not enough supply on the curve",
+            SoldOut => "the curve has sold out",
         }
     }
 }

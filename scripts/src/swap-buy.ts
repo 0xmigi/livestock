@@ -119,9 +119,8 @@ async function main(): Promise<void> {
   console.log(`quote      ${sol} SOL ($${(sol * quote.solUsd).toFixed(2)}) -> ${stockOut} units of stock at $${quote.stockUsd.toFixed(2)}`);
 
   // 2. Size the buy from what the swap delivers.
-  const params = { basePrice: narrative.basePrice, slope: narrative.slope };
-  const tokens = tokensForStock(narrative.supply, stockOut, params, narrative.feeBps);
-  const cost = buyCost(narrative.supply, tokens, params);
+  const tokens = tokensForStock(narrative, narrative.supply, stockOut, narrative.feeBps);
+  const cost = buyCost(narrative, tokens);
   const maxIn = cost + applyBps(cost, narrative.feeBps);
   console.log(`buy        ${tokens} ${narrative.symbol}, spending up to ${maxIn} stock units`);
   if (tokens === 0n) throw new Error("that much SOL does not buy one token");

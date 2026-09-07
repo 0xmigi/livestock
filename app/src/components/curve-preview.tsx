@@ -5,44 +5,50 @@
  * the dollar figures a creator actually cares about.
  */
 
-import { buyCost, spotPrice, type CurveParams } from "@nm/client";
+import {
+  INITIAL_REAL_TOKEN_RESERVES,
+  spotPriceAt,
+  TOKEN_TOTAL_SUPPLY,
+  type CurveState,
+} from "@nm/client";
 
 import { formatUsd, formatUsdAuto } from "@/lib/config";
 import { Tile } from "./ui";
 
+const POINTS = 48;
+
 export function CurvePreview({
-  params,
+  curve,
   stockPriceUsd,
   stockDecimals,
   stockSymbol,
-  maxSupply = 1_000_000n,
 }: {
-  params: CurveParams;
+  /** The opening reserves. */
+  curve: CurveState;
   stockPriceUsd: number;
   stockDecimals: number;
   stockSymbol: string;
-  maxSupply?: bigint;
 }) {
-  const toUsd = (units: bigint) =>
-    (Number(units) / 10 ** stockDecimals) * stockPriceUsd;
+  const toUsd = (units: number) => (units / 10 ** stockDecimals) * stockPriceUsd;
+  const priceAt = (supply: bigint) => spotPriceAt(curve, 0n, supply);
+  const capAt = (supply: bigint) => toUsd(priceAt(supply) * Number(TOKEN_TOTAL_SUPPLY));
 
-  const first = spotPrice(0n, params);
-  const last = spotPrice(maxSupply, params);
-  const firstHundred = buyCost(0n, 100n, params);
-  const halfway = spotPrice(maxSupply / 2n, params);
+  const cap = INITIAL_REAL_TOKEN_RESERVES;
+  const first = priceAt(0n);
+  const last = priceAt(cap);
+  const halfway = priceAt(cap / 2n);
 
-  // The curve is linear, so two points draw it. The area under it is what the
+  // The curve is a hyperbola, so it is sampled. The area under it is what the
   // vault holds at that supply.
   const w = 320;
   const h = 96;
   const pad = 6;
-  const y = (p: bigint) =>
-    h - pad - (Number(p - first) / Number(last - first || 1n)) * (h - 2 * pad);
-
-  const x0 = pad;
-  const x1 = w - pad;
-  const y0 = y(first);
-  const y1 = y(last);
+  const x = (i: number) => pad + (i / POINTS) * (w - 2 * pad);
+  const y = (p: number) => h - pad - ((p - first) / (last - first || 1)) * (h - 2 * pad);
+  const samples = Array.from({ length: POINTS + 1 }, (_, i) => {
+    const supply = (cap * BigInt(i)) / BigInt(POINTS);
+    return `${x(i)},${y(priceAt(supply))}`;
+  });
 
   return (
     <div className="space-y-3">
@@ -50,7 +56,7 @@ export function CurvePreview({
         viewBox={`0 0 ${w} ${h}`}
         className="h-24 w-full"
         role="img"
-        aria-label="Price per token rises linearly with supply"
+        aria-label="Price per token rises with supply, steeply towards the end"
       >
         <defs>
           <linearGradient id="curve-fill" x1="0" y1="0" x2="0" y2="1">
@@ -59,41 +65,31 @@ export function CurvePreview({
           </linearGradient>
         </defs>
         <polygon
-          points={`${x0},${h - pad} ${x0},${y0} ${x1},${y1} ${x1},${h - pad}`}
+          points={`${x(0)},${h - pad} ${samples.join(" ")} ${x(POINTS)},${h - pad}`}
           fill="url(#curve-fill)"
         />
-        <line
-          x1={x0}
-          y1={y0}
-          x2={x1}
-          y2={y1}
+        <polyline
+          points={samples.join(" ")}
+          fill="none"
           stroke="var(--accent)"
           strokeWidth="2"
           strokeLinecap="round"
+          strokeLinejoin="round"
         />
-        <circle cx={x0} cy={y0} r="3" fill="var(--n900)" />
-        <circle cx={x1} cy={y1} r="3" fill="var(--n900)" />
+        <circle cx={x(0)} cy={y(first)} r="3" fill="var(--n900)" />
+        <circle cx={x(POINTS)} cy={y(last)} r="3" fill="var(--n900)" />
       </svg>
 
       <div className="grid grid-cols-3 gap-2 rounded bg-neutral-50 p-2">
-        <Tile label="First token" value={formatUsdAuto(toUsd(first))} />
-        <Tile
-          label={`At ${(Number(maxSupply) / 2).toLocaleString()}`}
-          value={formatUsdAuto(toUsd(halfway))}
-        />
-        <Tile
-          label={`At ${Number(maxSupply).toLocaleString()}`}
-          value={formatUsdAuto(toUsd(last))}
-        />
+        <Tile label="Opens at" value={formatUsdAuto(capAt(0n))} sub="market cap" />
+        <Tile label="Halfway" value={formatUsdAuto(capAt(cap / 2n))} sub={formatUsdAuto(toUsd(halfway)) + " per token"} />
+        <Tile label="Sold out" value={formatUsdAuto(capAt(cap))} sub={formatUsdAuto(toUsd(last)) + " per token"} />
       </div>
 
       <p className="text-xs text-neutral-400">
-        The first 100 tokens cost{" "}
-        <span className="numeric text-neutral-600">
-          {formatUsd(toUsd(firstHundred))}
-        </span>{" "}
-        in {stockSymbol}. Early buyers pay less per token than late buyers and
-        everyone redeems at the same average, which is where early gains come
+        pump.fun&apos;s curve, in {stockSymbol}: a billion tokens, 793.1 million of them sold by the
+        curve, opening at {formatUsd(capAt(0n), 0)} of market cap. Early buyers pay less per token
+        than late buyers and everyone converts at the same average, which is where early gains come
         from.
       </p>
     </div>

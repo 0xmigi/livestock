@@ -50,7 +50,7 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
 
     let now = Clock::get()?.unix_timestamp;
 
-    {
+    let cost = {
         let [buyer, narrative, narrative_mint, buyer_tokens, buyer_stock, vault, creator_fee, stock_mint, token_program, stock_token_program, ..] =
             &*accounts
         else {
@@ -81,12 +81,11 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         }
 
         // --- pricing ------------------------------------------------------
-        let cost = buy_cost(
-            state.supply(),
-            tokens_out,
-            state.base_price(),
-            state.slope(),
-        )?;
+        // The curve sells pump.fun's real reserve and not one token more.
+        if tokens_out > state.remaining() {
+            return Err(MarketError::SoldOut.into());
+        }
+        let cost = buy_cost(state.virtual_stock(), state.virtual_tokens(), tokens_out)?;
         let fee = apply_bps(cost, state.fee_bps())?;
         let total = cost.checked_add(fee).ok_or(MarketError::MathOverflow)?;
 
@@ -139,11 +138,12 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
                 &[Signer::from(&seeds[..])],
                 &NARRATIVE_TOKEN_PROGRAM,
             )?;
-    }
+        cost
+    };
 
     let narrative = &mut accounts[NARRATIVE];
     let mut narrative_data = narrative.try_borrow_mut()?;
-    Narrative::from_bytes_mut(&mut narrative_data)?.credit_supply(tokens_out)?;
+    Narrative::from_bytes_mut(&mut narrative_data)?.record_buy(tokens_out, cost)?;
 
     Ok(())
 }

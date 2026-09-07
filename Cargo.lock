@@ -1382,6 +1382,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "livestock"
+version = "0.1.0"
+dependencies = [
+ "litesvm",
+ "pinocchio",
+ "pinocchio-system",
+ "pinocchio-token",
+ "solana-account",
+ "solana-address 2.6.1",
+ "solana-clock",
+ "solana-instruction",
+ "solana-keypair",
+ "solana-message",
+ "solana-signer",
+ "solana-system-interface",
+ "solana-transaction",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,25 +1431,6 @@ dependencies = [
  "keccak",
  "rand_core 0.6.4",
  "zeroize",
-]
-
-[[package]]
-name = "narrative_markets"
-version = "0.1.0"
-dependencies = [
- "litesvm",
- "pinocchio",
- "pinocchio-system",
- "pinocchio-token",
- "solana-account",
- "solana-address 2.6.1",
- "solana-clock",
- "solana-instruction",
- "solana-keypair",
- "solana-message",
- "solana-signer",
- "solana-system-interface",
- "solana-transaction",
 ]
 
 [[package]]

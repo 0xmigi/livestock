@@ -200,12 +200,14 @@ export function formatUsd(value: number, places = 2): string {
 
 /**
  * Dollar figure with sensible precision for small per-token prices. Under a
- * dollar, four decimals: the curve moves a token by fractions of a cent, and
- * two decimals would hide every buy.
+ * dollar, four decimals; under a cent, three significant digits, since a
+ * token on a fresh curve is a few millionths of a dollar and would otherwise
+ * read as nothing at all.
  */
 export function formatUsdAuto(value: number): string {
   if (!Number.isFinite(value)) return "—";
   if (value === 0) return "$0.00";
+  if (value < 0.01) return formatUsd(value, Math.min(10, 2 - Math.floor(Math.log10(value))));
   if (value < 1) return formatUsd(value, 4);
   return formatUsd(value, 2);
 }

@@ -34,6 +34,8 @@ pub enum MarketError {
     AlreadyInitialized = 13,
     /// Selling more tokens than exist on the curve.
     InsufficientSupply = 14,
+    /// The curve has sold every token it will ever sell.
+    SoldOut = 15,
 }
 
 impl From<MarketError> for ProgramError {

@@ -1,4 +1,8 @@
-//! `create_narrative(expiry_ts, base_price, slope, fee_bps, sell_tax_bps, name, symbol)`
+//! `create_narrative(expiry_ts, virtual_stock, fee_bps, sell_tax_bps, name, symbol)`
+//!
+//! `virtual_stock` is the curve's opening virtual stock reserve — what
+//! 30 SOL is worth in the stock, by convention — and the only curve parameter
+//! a creator supplies. The token side is pump.fun's and fixed in the program.
 //!
 //! Permissionless. Anyone can launch a narrative against any stock mint.
 //!
@@ -51,13 +55,12 @@ const NARRATIVE: usize = 1;
 pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
     // --- decode ----------------------------------------------------------
     let expiry_ts = read_i64(data, 0)?;
-    let base_price = read_u64(data, 8)?;
-    let slope = read_u64(data, 16)?;
-    let fee_bps = read_u16(data, 24)?;
-    let sell_tax_bps = read_u16(data, 26)?;
-    let name_len = read_u8(data, 28)? as usize;
+    let virtual_stock = read_u64(data, 8)?;
+    let fee_bps = read_u16(data, 16)?;
+    let sell_tax_bps = read_u16(data, 18)?;
+    let name_len = read_u8(data, 20)? as usize;
 
-    let name_start: usize = 29;
+    let name_start: usize = 21;
     let name_end = name_start
         .checked_add(name_len)
         .ok_or(ProgramError::InvalidInstructionData)?;
@@ -75,7 +78,7 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
     {
         return Err(MarketError::InvalidInstructionData.into());
     }
-    if base_price == 0 || slope == 0 {
+    if virtual_stock == 0 {
         return Err(MarketError::BadParameters.into());
     }
     if fee_bps > MAX_FEE_BPS || sell_tax_bps > MAX_SELL_TAX_BPS {
@@ -193,8 +196,7 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
         symbol,
         now,
         expiry_ts,
-        base_price,
-        slope,
+        virtual_stock,
         fee_bps,
         sell_tax_bps,
         stock_decimals,

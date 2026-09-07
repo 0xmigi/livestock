@@ -4,7 +4,9 @@
  * Livestock's visual system.
  *
  * Dark by default, light behind a toggle. Near-black (never black) with
- * off-white ink, hairline borders, 4px corners. Colour is semantic, the way
+ * off-white ink and 4px corners. Surfaces are told apart by fill, not by
+ * edges: a card is a lighter block on the ground, a panel a lighter block
+ * in a card. The only things with a border are text inputs. Colour is semantic, the way
  * fomo does it: blue for actions and links with no direction, green only for
  * buy and gain, red only for sell and loss. Figures stay in the ink colour. Geist for words, Geist Mono only for
  * figures, tickers and addresses.
@@ -18,12 +20,12 @@
   color-scheme: dark;
 
   /* Near-black, not black. Off-white ink. One teal accent for the clock. */
-  --ground: #141414;
-  --n50: #1a1a1a;
-  --n100: #202020;
-  --n200: #2a2a2a;
-  --n300: #3a3a3a;
-  --n400: #a7a79f;
+  --ground: #1c1c1c;
+  --n50: #282828;
+  --n100: #333333;
+  --n200: #3f3f3f;
+  --n300: #525252;
+  --n400: #aaaaa3;
   --n600: #cfcdcc;
   --n900: #f2f1ee;
 
@@ -35,7 +37,7 @@
      Red: sell and loss. Figures stay in the ink colour. */
   --accent: #516af6;
   --accent-hover: #6b80ff;
-  --accent-light: #171d3a;
+  --accent-light: #1f2750;
   --on-accent: #ffffff;
   --buy: #048f5c;
   --buy-hover: #05a86c;
@@ -53,8 +55,15 @@
 
   --shadow: rgba(0, 0, 0, 0.6);
 
+  /* Interaction. A hovered card lifts to a lighter fill; a hovered row gets a
+     faint tint; pressing settles it back. None of these is ever the ground. */
+  --lift: #333333;
+  --lift-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --hover: #313131;
+  --press: #242424;
+
   /* Ground texture: a faint dot grid, and two slow colour washes behind it. */
-  --dot: rgba(255, 255, 255, 0.045);
+  --dot: rgba(255, 255, 255, 0.06);
   --wash-a: rgba(81, 106, 246, 0.22);
   --wash-b: rgba(33, 201, 94, 0.14);
 }
@@ -62,10 +71,10 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --ground: #ffffff;
-  --n50: #f9f9f8;
-  --n100: #f0f0ee;
-  --n200: #dedddb;
+  --ground: #f3f3f1;
+  --n50: #ffffff;
+  --n100: #f3f3f1;
+  --n200: #e4e4e1;
   --n300: #c4c3c0;
   --n400: #7a7a76;
   --n600: #4a4a48;
@@ -93,7 +102,12 @@
   --success-fill: #e1f5ea;
   --warn-fill: #fbf3d9;
 
-  --shadow: rgba(28, 28, 29, 0.12);
+  --shadow: rgba(28, 28, 29, 0.1);
+
+  --lift: #ffffff;
+  --lift-shadow: 0 6px 20px rgba(28, 28, 29, 0.08), 0 1px 3px rgba(28, 28, 29, 0.05);
+  --hover: #f8f8f7;
+  --press: #f1f1ef;
 
   --dot: rgba(28, 28, 29, 0.07);
   --wash-a: rgba(59, 83, 224, 0.13);
@@ -143,6 +157,9 @@
   --color-success: var(--success);
   --color-success-fill: var(--success-fill);
   --color-warn-fill: var(--warn-fill);
+
+  --color-hover: var(--hover);
+  --color-press: var(--press);
 }
 
 /* Privy's modal reads these, so it sits on the same ground with the same
@@ -259,6 +276,33 @@ input[type="number"] {
   .min-h-screen {
     min-height: -webkit-fill-available;
   }
+}
+
+/* --- interaction ------------------------------------------------------- */
+
+/*
+ * A clickable card. On hover it lifts: a lighter fill in the dark, a soft
+ * shadow in the light, and a pixel up. On press it settles back down. Rows
+ * inside a card use `hover:bg-hover` instead; they tint, they don't lift.
+ */
+.lift {
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+@media (hover: hover) {
+  .lift:not(:disabled):hover {
+    background-color: var(--lift);
+    box-shadow: var(--lift-shadow);
+    transform: translateY(-1px);
+  }
+}
+.lift:not(:disabled):active {
+  background-color: var(--press);
+  box-shadow: none;
+  transform: translateY(0) scale(0.995);
+  transition-duration: 0.05s;
 }
 
 /* --- ground ----------------------------------------------------------- */

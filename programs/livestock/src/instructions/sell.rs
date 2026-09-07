@@ -50,7 +50,7 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
 
     let now = Clock::get()?.unix_timestamp;
 
-    {
+    let refund = {
         let [seller, narrative, narrative_mint, seller_tokens, seller_stock, vault, stock_mint, token_program, stock_token_program, ..] =
             &*accounts
         else {
@@ -93,12 +93,7 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
             &state.stock_mint,
         )?;
 
-        let refund = sell_refund(
-            state.supply(),
-            tokens_in,
-            state.base_price(),
-            state.slope(),
-        )?;
+        let refund = sell_refund(state.virtual_stock(), state.virtual_tokens(), tokens_in)?;
         // The tax is simply not paid out — it stays behind for the holders.
         let tax = apply_bps(refund, state.sell_tax_bps())?;
         let payout = refund.checked_sub(tax).ok_or(MarketError::MathOverflow)?;
@@ -127,11 +122,12 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
             TransferChecked::new(vault, stock_mint, seller_stock, narrative, payout, decimals)
                 .invoke_signed_with_program(&[Signer::from(&seeds[..])], &stock_program)?;
         }
-    }
+        refund
+    };
 
     let narrative = &mut accounts[NARRATIVE];
     let mut narrative_data = narrative.try_borrow_mut()?;
-    Narrative::from_bytes_mut(&mut narrative_data)?.debit_supply(tokens_in)?;
+    Narrative::from_bytes_mut(&mut narrative_data)?.record_sell(tokens_in, refund)?;
 
     Ok(())
 }

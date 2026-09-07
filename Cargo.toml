@@ -1,5 +1,5 @@
 [workspace]
-members = ["programs/narrative_markets"]
+members = ["programs/livestock"]
 resolver = "2"
 
 [workspace.dependencies]

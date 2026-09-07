@@ -1,6 +1,6 @@
 /**
  * Custom program errors, mirroring
- * `programs/narrative_markets/src/error.rs`. The program surfaces these as
+ * `programs/livestock/src/error.rs`. The program surfaces these as
  * `ProgramError::Custom(n)`, which appears in logs as
  * `custom program error: 0x<n>`.
  */
@@ -21,6 +21,7 @@ export enum MarketErrorCode {
   InvalidInstructionData = 12,
   AlreadyInitialized = 13,
   InsufficientSupply = 14,
+  SoldOut = 15,
 }
 
 const MESSAGES: Record<MarketErrorCode, string> = {
@@ -48,6 +49,8 @@ const MESSAGES: Record<MarketErrorCode, string> = {
     "A narrative with this name already exists for this stock.",
   [MarketErrorCode.InsufficientSupply]:
     "There are not enough tokens on the curve to sell that many.",
+  [MarketErrorCode.SoldOut]:
+    "This narrative has sold out. Tokens come back on the curve only when someone sells.",
 };
 
 export function describeErrorCode(code: number): string | undefined {

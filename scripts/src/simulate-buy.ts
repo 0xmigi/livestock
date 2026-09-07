@@ -62,8 +62,7 @@ async function main(): Promise<void> {
     Uint8Array.from(Buffer.from(info.value.data[0], "base64")),
   );
 
-  const params = { basePrice: n.basePrice, slope: n.slope };
-  const cost = buyCost(n.supply, tokensOut, params);
+  const cost = buyCost(n, tokensOut);
   const maxIn = cost + applyBps(cost, n.feeBps);
 
   const stockAta = await ata(n.stockMint, buyer, n.stockTokenProgram);

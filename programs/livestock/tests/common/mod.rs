@@ -9,7 +9,7 @@
 
 use {
     litesvm::{types::TransactionResult, LiteSVM},
-    narrative_markets::state::{NARRATIVE_SEED, NARRATIVE_TOKEN_PROGRAM},
+    livestock::state::{NARRATIVE_SEED, NARRATIVE_TOKEN_PROGRAM},
     solana_address::Address,
     solana_clock::Clock,
     solana_instruction::{account_meta::AccountMeta, Instruction},
@@ -32,9 +32,9 @@ pub const SOL: u64 = 1_000_000_000;
 /// xStocks carry 8 decimals.
 pub const STOCK_DECIMALS: u8 = 8;
 
-/// Defaults sized for a ~$250 stock: first token ≈ $0.10.
-pub const BASE_PRICE: u64 = 40_000;
-pub const SLOPE: u64 = 4;
+/// The curve's opening virtual stock reserve: 30 SOL at $150 is $4,500,
+/// which in a $250 stock with 8 decimals is 18 shares.
+pub const VIRTUAL_STOCK: u64 = 1_800_000_000;
 pub const FEE_BPS: u16 = 100; // 1%
 pub const SELL_TAX_BPS: u16 = 1_000; // 10%
 
@@ -78,8 +78,8 @@ impl Env {
 
     pub fn with_stock_program(stock_program: Address) -> Self {
         let mut svm = LiteSVM::new();
-        svm.add_program_from_file(narrative_markets::ID, program_binary())
-            .expect("load narrative_markets.so");
+        svm.add_program_from_file(livestock::ID, program_binary())
+            .expect("load livestock.so");
 
         let creator = Keypair::new();
         svm.airdrop(&creator.pubkey(), 1_000 * SOL).unwrap();
@@ -99,7 +99,7 @@ impl Env {
     /// The narrative PDA for a mint — one fixed seed, since the mint is a
     /// plain keypair rather than a derived address.
     pub fn narrative_for(mint: &Address) -> Address {
-        Address::find_program_address(&[NARRATIVE_SEED, mint.as_ref()], &narrative_markets::ID).0
+        Address::find_program_address(&[NARRATIVE_SEED, mint.as_ref()], &livestock::ID).0
     }
 
     /// Creates a Token-2022 narrative mint with zero decimals whose mint
@@ -327,16 +327,14 @@ pub fn create_narrative_ix(
     name: &str,
     symbol: &str,
     expiry_ts: i64,
-    base_price: u64,
-    slope: u64,
+    virtual_stock: u64,
     fee_bps: u16,
     sell_tax_bps: u16,
 ) -> Instruction {
     let narrative = Env::narrative_for(narrative_mint);
     let mut data = vec![0u8];
     data.extend_from_slice(&expiry_ts.to_le_bytes());
-    data.extend_from_slice(&base_price.to_le_bytes());
-    data.extend_from_slice(&slope.to_le_bytes());
+    data.extend_from_slice(&virtual_stock.to_le_bytes());
     data.extend_from_slice(&fee_bps.to_le_bytes());
     data.extend_from_slice(&sell_tax_bps.to_le_bytes());
     data.push(name.len() as u8);
@@ -344,7 +342,7 @@ pub fn create_narrative_ix(
     data.extend_from_slice(symbol.as_bytes());
 
     Instruction {
-        program_id: narrative_markets::ID,
+        program_id: livestock::ID,
         accounts: vec![
             AccountMeta::new(*creator, true),
             AccountMeta::new(narrative, false),
@@ -376,7 +374,7 @@ pub fn buy_ix(
     data.extend_from_slice(&max_stock_in.to_le_bytes());
 
     Instruction {
-        program_id: narrative_markets::ID,
+        program_id: livestock::ID,
         accounts: vec![
             AccountMeta::new_readonly(*buyer, true),
             AccountMeta::new(*narrative, false),
@@ -410,7 +408,7 @@ pub fn sell_ix(
     data.extend_from_slice(&min_stock_out.to_le_bytes());
 
     Instruction {
-        program_id: narrative_markets::ID,
+        program_id: livestock::ID,
         accounts: vec![
             AccountMeta::new_readonly(*seller, true),
             AccountMeta::new(*narrative, false),
@@ -433,7 +431,7 @@ pub fn expire_ix(
     vault: &Address,
 ) -> Instruction {
     Instruction {
-        program_id: narrative_markets::ID,
+        program_id: livestock::ID,
         accounts: vec![
             AccountMeta::new(*narrative, false),
             AccountMeta::new(*narrative_mint, false),
@@ -455,7 +453,7 @@ pub fn convert_ix(
     vault: &Address,
 ) -> Instruction {
     Instruction {
-        program_id: narrative_markets::ID,
+        program_id: livestock::ID,
         accounts: vec![
             AccountMeta::new(*narrative, false),
             AccountMeta::new(*narrative_mint, false),
@@ -480,7 +478,7 @@ pub fn redeem_ix(
     vault: &Address,
 ) -> Instruction {
     Instruction {
-        program_id: narrative_markets::ID,
+        program_id: livestock::ID,
         accounts: vec![
             AccountMeta::new_readonly(*holder, true),
             AccountMeta::new(*narrative, false),
@@ -499,6 +497,6 @@ pub fn redeem_ix(
 fn program_binary() -> &'static str {
     concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../target/deploy/narrative_markets.so"
+        "/../../target/deploy/livestock.so"
     )
 }

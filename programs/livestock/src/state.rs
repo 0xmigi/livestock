@@ -10,7 +10,10 @@
 //! Do not "simplify" these back to native integer types.
 
 use {
-    crate::error::MarketError,
+    crate::{
+        curve::{INITIAL_REAL_TOKEN_RESERVES, INITIAL_VIRTUAL_TOKEN_RESERVES},
+        error::MarketError,
+    },
     pinocchio::{error::ProgramError, Address},
 };
 
@@ -31,13 +34,10 @@ pub const MAX_SYMBOL_LEN: usize = 10;
 
 /// Narrative mints carry **0 decimals**: one token is one integer unit.
 ///
-/// Launchpad convention is 6, and this deviates on purpose. The curve is
-/// linear in stock base units, and over a 6-decimal supply the slope would be
-/// a fraction far below 1 — it floors to zero in integer arithmetic. Scaling
-/// it back up reintroduces a division whose flooring can make the marginal
-/// price equal the average, and "marginal strictly exceeds average" is the
-/// invariant that makes buying-and-redeeming always a loss. Whole units keep
-/// that exact.
+/// Launchpad convention is 6, and this deviates on purpose. The curve's
+/// reserves are pump.fun's, counted in whole tokens: a billion of them is
+/// plenty of granularity, and whole units keep every price an exact integer
+/// ratio of two reserves with no decimal scaling anywhere in the program.
 pub const NARRATIVE_DECIMALS: u8 = 0;
 
 /// Narrative mints are Token-2022, matching what launchpads now issue, and
@@ -56,10 +56,11 @@ pub const MAX_FEE_BPS: u16 = 1_000;
 pub const MAX_SELL_TAX_BPS: u16 = 2_000;
 
 const DISCRIMINATOR: u8 = 1;
-/// Bumped when the payload layout changes. The account size did not change
-/// between v1 and v2, so without checking this an old account would decode
-/// silently into the wrong fields rather than being rejected.
-const VERSION: u8 = 2;
+/// Bumped when the payload layout changes. The account size has never
+/// changed, so without checking this an old account would decode silently
+/// into the wrong fields rather than being rejected. v3 replaced the linear
+/// curve's `base_price` and `slope` with the pump.fun curve's two reserves.
+const VERSION: u8 = 3;
 const HEADER: usize = 2;
 
 /// Lifecycle. There is no path back to `Live`.
@@ -104,10 +105,12 @@ pub struct Narrative {
     pub symbol: [u8; MAX_SYMBOL_LEN],
     created_ts: [u8; 8],
     expiry_ts: [u8; 8],
-    /// Stock base units for the first token.
-    base_price: [u8; 8],
-    /// Stock base units added to the price per token sold.
-    slope: [u8; 8],
+    /// The curve's virtual stock reserve, in stock base units. Grows with
+    /// every buy and shrinks with every sell.
+    virtual_stock: [u8; 8],
+    /// The curve's virtual token reserve. Starts at pump.fun's
+    /// 1,073,000,000 and moves opposite to supply.
+    virtual_tokens: [u8; 8],
     /// Tokens outstanding.
     supply: [u8; 8],
     /// Supply frozen at expiry — the redeem denominator.
@@ -197,8 +200,7 @@ impl Narrative {
         symbol: &[u8],
         created_ts: i64,
         expiry_ts: i64,
-        base_price: u64,
-        slope: u64,
+        virtual_stock: u64,
         fee_bps: u16,
         sell_tax_bps: u16,
         stock_decimals: u8,
@@ -227,8 +229,8 @@ impl Narrative {
 
         self.created_ts = created_ts.to_le_bytes();
         self.expiry_ts = expiry_ts.to_le_bytes();
-        self.base_price = base_price.to_le_bytes();
-        self.slope = slope.to_le_bytes();
+        self.virtual_stock = virtual_stock.to_le_bytes();
+        self.virtual_tokens = INITIAL_VIRTUAL_TOKEN_RESERVES.to_le_bytes();
         self.supply = 0u64.to_le_bytes();
         self.final_supply = 0u64.to_le_bytes();
         self.final_vault = 0u64.to_le_bytes();
@@ -265,12 +267,17 @@ impl Narrative {
         i64::from_le_bytes(self.expiry_ts)
     }
 
-    pub fn base_price(&self) -> u64 {
-        u64::from_le_bytes(self.base_price)
+    pub fn virtual_stock(&self) -> u64 {
+        u64::from_le_bytes(self.virtual_stock)
     }
 
-    pub fn slope(&self) -> u64 {
-        u64::from_le_bytes(self.slope)
+    pub fn virtual_tokens(&self) -> u64 {
+        u64::from_le_bytes(self.virtual_tokens)
+    }
+
+    /// Tokens the curve can still sell before it is sold out.
+    pub fn remaining(&self) -> u64 {
+        INITIAL_REAL_TOKEN_RESERVES.saturating_sub(self.supply())
     }
 
     pub fn supply(&self) -> u64 {
@@ -293,20 +300,54 @@ impl Narrative {
         u16::from_le_bytes(self.sell_tax_bps)
     }
 
-    pub fn credit_supply(&mut self, amount: u64) -> Result<(), MarketError> {
+    /// Records a buy: `amount` tokens left the curve for `cost` stock.
+    pub fn record_buy(&mut self, amount: u64, cost: u64) -> Result<(), MarketError> {
         self.supply = self
             .supply()
             .checked_add(amount)
             .ok_or(MarketError::MathOverflow)?
             .to_le_bytes();
+        self.virtual_stock = self
+            .virtual_stock()
+            .checked_add(cost)
+            .ok_or(MarketError::MathOverflow)?
+            .to_le_bytes();
+        self.virtual_tokens = self
+            .virtual_tokens()
+            .checked_sub(amount)
+            .ok_or(MarketError::MathOverflow)?
+            .to_le_bytes();
         Ok(())
     }
 
+    /// Burns `amount` tokens after expiry, when the curve is closed and only
+    /// the outstanding supply still matters.
     pub fn debit_supply(&mut self, amount: u64) -> Result<(), MarketError> {
         self.supply = self
             .supply()
             .checked_sub(amount)
             .ok_or(MarketError::InsufficientSupply)?
+            .to_le_bytes();
+        Ok(())
+    }
+
+    /// Records a sell: `amount` tokens came back for `refund` stock (before
+    /// the tax, which leaves the curve but not the vault).
+    pub fn record_sell(&mut self, amount: u64, refund: u64) -> Result<(), MarketError> {
+        self.supply = self
+            .supply()
+            .checked_sub(amount)
+            .ok_or(MarketError::InsufficientSupply)?
+            .to_le_bytes();
+        self.virtual_stock = self
+            .virtual_stock()
+            .checked_sub(refund)
+            .ok_or(MarketError::MathOverflow)?
+            .to_le_bytes();
+        self.virtual_tokens = self
+            .virtual_tokens()
+            .checked_add(amount)
+            .ok_or(MarketError::MathOverflow)?
             .to_le_bytes();
         Ok(())
     }

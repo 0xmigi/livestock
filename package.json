@@ -7,7 +7,7 @@
   "scripts": {
     "build:client": "pnpm --filter @nm/client run build",
     "build:program": "cargo build-sbf",
-    "test:program": "cargo test -p narrative_markets",
+    "test:program": "cargo test -p livestock",
     "dev": "pnpm run build:client && pnpm --filter @nm/app dev",
     "build": "pnpm run build:client && pnpm --filter @nm/app build",
     "typecheck": "pnpm -r typecheck"

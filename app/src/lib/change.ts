@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { spotPrice, type Narrative } from "@nm/client";
+import { spotPrice, spotPriceAt, type Narrative } from "@nm/client";
 import type { Address, Signature } from "@solana/kit";
 
 import { rpc } from "./config";
@@ -87,7 +87,8 @@ async function scan(narrative: Address, n: Narrative): Promise<Activity> {
   return { supplyThen: truncated ? null : then < 0n ? 0n : then, volume, buys, sells };
 }
 
-function load(address: Address, n: Narrative): Promise<Activity> {
+/** The last 24 hours of one narrative, cached for a minute. */
+export function fetchActivity(address: Address, n: Narrative): Promise<Activity> {
   // Keyed on supply too: every buy or sell changes it, so a trade that just
   // landed is never hidden behind a cached scan from before it.
   const key = `${address}:${n.supply}`;
@@ -105,7 +106,7 @@ export function useActivity(address: Address | null, n: Narrative | null): Activ
   useEffect(() => {
     if (!address || !n) return;
     let cancelled = false;
-    void load(address, n).then((a) => {
+    void fetchActivity(address, n).then((a) => {
       if (!cancelled) setActivity(a);
     });
     return () => {
@@ -125,10 +126,15 @@ export type Change = { pct: number; inStockTerms: boolean } | null;
 export function usePriceChange(address: Address | null, n: Narrative | null): Change {
   const activity = useActivity(address, n);
   const changes = useStockChanges();
+  return changeOf(n, activity, changes);
+}
+
+/** The same figure from already-fetched activity and the stocks' own 24h moves. */
+export function changeOf(n: Narrative | null, activity: Activity | null, changes: Record<string, number>): Change {
   if (!n || !activity || activity.supplyThen === null) return null;
-  const now = spotPrice(n.supply, n);
-  const then = spotPrice(activity.supplyThen, n);
-  if (then === 0n) return null;
+  const now = spotPrice(n);
+  const then = spotPriceAt(n, n.supply, activity.supplyThen);
+  if (then === 0) return null;
   const tokenMove = Number(now - then) / Number(then);
   const stockMove = changes[n.stockMint];
   if (stockMove === undefined) return { pct: tokenMove * 100, inStockTerms: true };

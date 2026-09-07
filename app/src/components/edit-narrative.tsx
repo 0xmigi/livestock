@@ -138,7 +138,7 @@ function EditDialog({
       <div
         role="dialog"
         aria-label={`Edit ${narrative.name}`}
-        className="relative w-full max-w-md space-y-5 rounded border border-neutral-200 bg-ground p-5 shadow-xl sm:p-6"
+        className="relative w-full max-w-md space-y-5 rounded bg-neutral-50 p-5 shadow-2xl shadow-black/30 sm:p-6"
       >
         <div>
           <h2 className="text-lg font-semibold text-neutral-900">Edit {narrative.name}</h2>

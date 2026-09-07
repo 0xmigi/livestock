@@ -14,7 +14,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { applyBps, fetchNarratives, netSellProceeds, spotPrice, type Narrative } from "@nm/client";
+import { applyBps, fetchNarratives, netSellProceeds, spotPriceAt, stateAt, type Narrative } from "@nm/client";
 import type { Address, Signature } from "@solana/kit";
 
 import { rpc } from "@/lib/server/rpc";
@@ -85,7 +85,7 @@ type Replay = { points: HighlightPoint[]; traders: number; exits: Exit[]; snapsh
 
 let cached: { at: number; body: Highlight | { found: false } } | null = null;
 
-function units(value: bigint, decimals: number): number {
+function units(value: bigint | number, decimals: number): number {
   return Number(value) / 10 ** decimals;
 }
 
@@ -108,7 +108,6 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
     txs.push(...(await Promise.all(recent.slice(i, i + 25).map((s) => fetchTx(s.signature)))));
   }
 
-  const params = { basePrice: n.basePrice, slope: n.slope };
   const lots = new Map<Address, Lot[]>();
   const exits: Exit[] = [];
   const points: HighlightPoint[] = [];
@@ -152,7 +151,7 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
   if (supply < 0n) supply = 0n;
   const snapshots: Snapshot[] = [];
   // The chart starts where the narrative's week does: its launch, if later.
-  points.push({ t: Math.max(since, Number(n.createdTs)), spot: units(spotPrice(supply, params), n.stockDecimals) });
+  points.push({ t: Math.max(since, Number(n.createdTs)), spot: units(spotPriceAt(n, n.supply, supply), n.stockDecimals) });
 
   for (const d of deltas) {
     for (const [owner, delta] of d.tokens) {
@@ -196,7 +195,7 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
     }
     // Conversions after expiry burn the supply but are not price moves.
     if (d.t < Number(n.expiryTs)) {
-      points.push({ t: d.t, spot: units(spotPrice(supply < 0n ? 0n : supply, params), n.stockDecimals) });
+      points.push({ t: d.t, spot: units(spotPriceAt(n, n.supply, supply < 0n ? 0n : supply), n.stockDecimals) });
     }
   }
   const end = Math.min(Math.floor(Date.now() / 1000), Number(n.expiryTs));
@@ -232,7 +231,6 @@ async function buildSeries(n: Narrative, snapshots: Snapshot[], exit: Exit): Pro
   };
   const entryPrice = priceAt(t0);
   const stockShares = STAKE / entryPrice;
-  const params = { basePrice: n.basePrice, slope: n.slope };
   const tokens = exit.tokens;
 
   // The supply in effect at each moment of the trade, stopping before the exit.
@@ -251,7 +249,7 @@ async function buildSeries(n: Narrative, snapshots: Snapshot[], exit: Exit): Pro
   };
   const narrativeShares = (supply: bigint) => {
     if (tokens > supply || tokens === 0n) return 0;
-    const proceeds = netSellProceeds(supply, tokens, params, n.sellTaxBps);
+    const proceeds = netSellProceeds(stateAt(n, n.supply, supply), tokens, n.sellTaxBps);
     return (Number(proceeds) / Number(costOfExited)) * stockShares;
   };
 

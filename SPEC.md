@@ -2,8 +2,8 @@
 
 > **Naming.** The product is **Livestock** (planned home: `livestock.gg`).
 > The things people trade are **narrative tokens**; that phrase does not
-> change. The on-chain program keeps its crate name, `narrative_markets`, and
-> the workspace packages keep the `@nm/*` scope. Only the brand moved.
+> change. The on-chain program is the `livestock` crate; the workspace
+> packages keep the `@nm/*` scope.
 >
 > This document is the source of truth for what is built and why. Where the
 > code and this document disagree, fix one of them the same day.
@@ -90,11 +90,6 @@ REDEEM   burn narrative tokens ──> pro-rata TSLAx from the vault
 The curve rises, so early buyers pay less TSLAx per narrative token than late
 buyers. At expiry, everyone redeems the **same** TSLAx per token — the vault's
 average price.
-
-On a linear curve that resolves to something clean:
-
-> **You profit if you bought in the first half of everything that ever gets
-> bought.**
 
 Your gains are funded by later buyers. Your losses are bounded by the fact that
 you still receive stock. The floor is real equity, not zero.
@@ -204,8 +199,8 @@ name:                 [u8; 32]
 symbol:               [u8; 10]
 created_ts:           i64
 expiry_ts:            i64          // immutable
-base_price:           u64          // stock base units for the first token
-slope:                u64          // stock base units added per token sold
+virtual_stock:        u64          // the curve's virtual stock reserve, live
+virtual_tokens:       u64          // the curve's virtual token reserve, live
 supply:               u64          // tokens outstanding
 final_supply:         u64          // frozen at expiry — the redeem denominator
 final_vault:          u64          // frozen at expiry — the redeem numerator
@@ -216,9 +211,10 @@ name_len, symbol_len, bump, stock_decimals: u8
 _reserved:            [u8; 13]
 ```
 
-The **version byte is checked on both sides**. The v1 → v2 change kept the
-size and moved fields, so without the check an old account decodes silently
-into the wrong values. Bump the version on every layout change.
+The **version byte is checked on both sides**. The size has never changed
+(v2 moved fields, v3 swapped the linear curve's parameters for the two
+reserves), so without the check an old account decodes silently into the
+wrong values. Bump the version on every layout change.
 
 ### `vault` — the narrative PDA's associated token account for `stock_mint`
 
@@ -236,13 +232,13 @@ One-byte discriminators: `0 create_narrative`, `1 buy`, `2 sell`, `3 expire`,
 **Token-2022** program; every instruction that moves stock passes the stock's
 own token program, which the narrative recorded at creation.
 
-### `create_narrative(expiry_ts, base_price, slope, fee_bps, sell_tax_bps, name_len, name, symbol)`
+### `create_narrative(expiry_ts, virtual_stock, fee_bps, sell_tax_bps, name_len, name, symbol)`
 Accounts: creator (signer, pays rent) · narrative PDA · stock mint · narrative
 mint · vault · system program · stock token program.
 
 Permissionless. Creates the `Narrative` account only. Validates:
 - `expiry_ts` is between 1 hour and 90 days out
-- `base_price > 0`, `slope > 0`
+- `virtual_stock > 0`; `virtual_tokens` starts at 1,073,000,000
 - `fee_bps ≤ 1000`, `sell_tax_bps ≤ 2000`
 - the stock mint is an initialized mint under the supplied token program;
   its decimals are recorded
@@ -251,20 +247,21 @@ Permissionless. Creates the `Narrative` account only. Validates:
 
 ### `buy(tokens_out: u64, max_stock_in: u64)`
 - Require `status == Live` and `now < expiry_ts` (re-check the clock every tx)
-- `cost = ∫` curve over `[supply, supply + tokens_out)` — see §8
+- Require `supply + tokens_out <= 793_100_000`, else `SoldOut`
+- `cost = tokens_out × virtual_stock / (virtual_tokens − tokens_out) + 1` — see §8
 - `fee = cost × fee_bps / 10_000`, sent to the creator's stock account
 - Require `cost + fee <= max_stock_in`
 - `TransferChecked` `cost` buyer → vault and `fee` buyer → creator
 - Mint `tokens_out` narrative tokens to the buyer, signed by the narrative PDA
-- `supply += tokens_out`
+- `supply += tokens_out`, `virtual_stock += cost`, `virtual_tokens −= tokens_out`
 
 ### `sell(tokens_in: u64, min_stock_out: u64)`
 - Require `status == Live` and `now < expiry_ts`
-- `refund = ∫` curve over `[supply - tokens_in, supply)`
+- `refund = tokens_in × virtual_stock / (virtual_tokens + tokens_in)`
 - `tax = refund × sell_tax_bps / 10_000`, **stays in the vault**
 - Require `refund - tax >= min_stock_out`
 - Burn the tokens, transfer `refund - tax` vault → seller
-- `supply -= tokens_in`
+- `supply -= tokens_in`, `virtual_stock −= refund`, `virtual_tokens += tokens_in`
 
 The tax is the mechanism that makes "you don't need to sell" true rather than
 aspirational — see §9.
@@ -290,38 +287,56 @@ aspirational — see §9.
 
 ## 8. Curve
 
-Linear, in stock base units per narrative token:
+**pump.fun's curve, exactly, with the stock in place of SOL.** A constant
+product over two virtual reserves:
 
 ```
-price(supply) = base_price + slope × supply
+k = virtual_stock × virtual_tokens
+
+buy  n:  cost   = n × virtual_stock / (virtual_tokens − n) + 1     (rounded up)
+sell n:  refund = n × virtual_stock / (virtual_tokens + n)         (rounded down)
+spot     = virtual_stock / virtual_tokens
 ```
 
-A buy pays the **exact integral**, so splitting a buy costs the same as making it
-in one go:
+A buy adds its cost to `virtual_stock` and takes its tokens out of
+`virtual_tokens`; a sell does the reverse with the full refund, tax included
+(the tax is the vault's, not the curve's). Rounding always favours the vault,
+so `k` can only grow.
+
+The token side is pump.fun's, fixed in the program and counted in whole
+tokens since narrative mints have 0 decimals:
 
 ```
-cost(supply, n) = base_price × n + slope × (supply × n + n(n-1)/2)
+INITIAL_VIRTUAL_TOKEN_RESERVES = 1_073_000_000   // pump.fun: 1,073,000,000 × 10⁶
+INITIAL_REAL_TOKEN_RESERVES    =   793_100_000   // all the curve will ever sell
+TOKEN_TOTAL_SUPPLY             = 1_000_000_000   // what market cap is quoted against
 ```
 
-`n(n-1)/2` is exact — one of the two factors is always even. Compute in `u128`,
-narrow once at the end, and use checked math throughout.
+The stock side is the one parameter a creator supplies, `virtual_stock`: what
+**30 SOL** (pump.fun's `initial_virtual_sol_reserves`) is worth in the stock
+at creation, computed client-side from the live SOL and stock prices. So every
+narrative opens at pump.fun's market cap, in whatever stock it converts to,
+and a buy of the entire real reserve costs about 85 SOL worth of it.
 
-**Why 0 decimals.** Over a 6-decimal supply the slope is a fraction far below
-1 and floors to zero in integer arithmetic. Scaling it back up reintroduces a
-division whose flooring can make the marginal price *equal* the average, and
-"marginal strictly exceeds average" is the invariant that makes
-buy-and-redeem always a loss. Decimals are cosmetic; the invariant is not.
+**Sold out.** Supply can never exceed 793.1M. pump.fun migrates to an AMM at
+that point; a narrative has nowhere to go, so buys revert with `SoldOut`,
+sells keep working and put tokens back on the curve, and the date settles it
+as usual. The remaining 206.9M of nominal supply is never minted.
 
-**Defaults** are stock-price-dependent and computed client-side from the
-stock's spot price, targeting a first token around $0.10 and ~$10 by 1M supply.
-For a ~$250 stock with an 8-decimal stock mint:
+Compute in `u128`, narrow once at the end, checked math throughout.
 
-```
-base_price = 40_000    // 0.0004 TSLAx
-slope      = 4         // base units per token
-```
+**Why 0 decimals.** The reserves are pump.fun's in whole tokens; a billion of
+them is granularity enough, and whole units keep every price an exact ratio
+of two integers with no decimal scaling in the program. (Under the earlier
+linear curve the reason was different: a 6-decimal slope floored to zero.)
 
----
+**The invariant.** Redemption pays the vault's average; a buy pays the
+marginal price; on a rising curve marginal ≥ average, so buy-and-redeem can
+never profit. Near zero supply the curve is flat enough that the two agree to
+within a base unit and the buyer merely gets their stock back, minus the fee.
+The only way to come out a base unit ahead is to collect other people's
+round-ups, capped at one unit per earlier trade: dust, below a transaction
+fee.
 
 ## 9. Attack surface
 
@@ -334,7 +349,7 @@ first table has a LiteSVM test.
 |---|---|
 | **Buy-and-redeem snipe at expiry** | Marginal price always exceeds the average on a rising curve. Buying late is always a loss. |
 | **Stock-rally arbitrage** | Closed by the stock-denominated curve (§5). Was fatal under a USDC-denominated curve. |
-| **Late-stage supply squeeze** | Cornering supply near expiry means buying at the most expensive part of the curve. Self-limiting. |
+| **Late-stage supply squeeze** | Cornering supply near expiry means buying at the most expensive part of the curve, and the curve sells out at 793.1M tokens. Self-limiting. |
 | **Creator rug** | Creator cannot drain the vault, move the expiry, or mint off-curve. All program-enforced. |
 | **Off-curve minting** | `create_narrative` rejects a mint whose authority is not already the narrative PDA, and the authority is revoked at expiry. |
 | **Freezing holders' tokens** | A narrative mint with a freeze authority is rejected at creation. |
@@ -502,7 +517,7 @@ URI off the mint's `TokenMetadata` extension and caches the JSON per session.
 - **RPC:** Helius.
 - **Deploy:** Vercel, with Vercel Blob for images and metadata JSON. No other
   backend — the Markets page reads narratives with `getProgramAccounts`.
-- **Tests:** LiteSVM for integration (25), plain unit tests for curve math (11).
+- **Tests:** LiteSVM for integration (30), plain unit tests for curve math (12).
 
 ---
 

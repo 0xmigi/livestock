@@ -11,7 +11,7 @@ import {
 } from "@solana/kit";
 
 export const NARRATIVE_MARKETS_PROGRAM_ID = address(
-  "7WbnkZ57UvAPzy3rNqErZW57xnhUdnqwXnDm34dGV2SX",
+  "5X7RTCFFLgCpsRiskzm1gBEQmbzBEL39H6WpN9YzSizB",
 );
 
 export const TOKEN_PROGRAM_ID = address(

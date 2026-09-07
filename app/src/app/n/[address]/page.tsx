@@ -9,6 +9,7 @@ import {
   redemptionPerToken,
   secondsRemaining,
   spotPrice,
+  TOKEN_TOTAL_SUPPLY,
   Status,
 } from "@nm/client";
 import { address } from "@solana/kit";
@@ -97,9 +98,9 @@ export default function NarrativePage({
     return (
       <Shell>
         <div className="space-y-4" aria-hidden>
-          <div className="h-16 w-16 animate-pulse rounded bg-neutral-100" />
-          <div className="h-10 w-72 animate-pulse rounded bg-neutral-100" />
-          <div className="h-1 w-full animate-pulse rounded bg-neutral-100" />
+          <div className="h-16 w-16 animate-pulse rounded bg-neutral-50" />
+          <div className="h-10 w-72 animate-pulse rounded bg-neutral-50" />
+          <div className="h-1 w-full animate-pulse rounded bg-neutral-50" />
           <div className="h-40 w-full animate-pulse rounded bg-neutral-50" />
         </div>
       </Shell>
@@ -125,9 +126,9 @@ export default function NarrativePage({
     narrative.status === Status.Live ? narrative.vaultBalance : narrative.finalVault;
   const supply =
     narrative.status === Status.Live ? narrative.supply : narrative.finalSupply;
-  const toUsd = (units: bigint) => (Number(units) / 10 ** stock.decimals) * price;
+  const toUsd = (units: bigint | number) => (Number(units) / 10 ** stock.decimals) * price;
 
-  const nextPrice = spotPrice(narrative.supply, narrative);
+  const nextPrice = spotPrice(narrative);
   const held = position?.tokens ?? 0n;
   // Narratives minted with the program as permanent delegate are paid out by
   // the keeper; older ones need each holder to claim.
@@ -145,7 +146,7 @@ export default function NarrativePage({
   const inStock = (usd: string) => (price > 0 ? `${stock.symbol} ≈ ${usd}` : stock.symbol);
 
   const action = !ready ? (
-    <div className="h-24 animate-pulse rounded bg-neutral-100" />
+    <div className="h-24 animate-pulse rounded bg-neutral-50" />
   ) : !authenticated || !owner ? (
     <div className="flex h-full flex-col justify-center py-2 text-center">
       <p className="text-sm text-neutral-600">
@@ -198,8 +199,8 @@ export default function NarrativePage({
         </div>
 
         {/* The clock and the action, in one panel */}
-        <section className="grid overflow-hidden rounded border border-neutral-200 bg-neutral-50 lg:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="flex flex-col justify-between gap-6 p-5 sm:p-6">
+        <section className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_400px]">
+          <div className="flex flex-col justify-between gap-6 rounded bg-neutral-50 p-5 sm:p-6">
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-3">
@@ -278,12 +279,12 @@ export default function NarrativePage({
               <TimeBar createdTs={narrative.createdTs} expiryTs={narrative.expiryTs} now={now} phase={phase} />
             </div>
           </div>
-          <div className="border-t border-neutral-200 p-5 lg:border-l lg:border-t-0">{action}</div>
+          <div className="rounded bg-neutral-50 p-5">{action}</div>
         </section>
 
         {/* Details, in the order a buyer asks: is it alive, what do I get, how big, who is behind it */}
-        <section className="flex flex-col gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200">
-          <div className="grid grid-cols-2 gap-px sm:grid-cols-4">
+        <section className="flex flex-col gap-2 rounded bg-neutral-50 p-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Figure
               label="24h volume"
               value={activity ? formatUsd(toUsd(activity.volume), 0) : "—"}
@@ -309,8 +310,8 @@ export default function NarrativePage({
               sub={price > 0 ? `≈ ${formatUsd(toUsd(backing))}` : undefined}
             />
           </div>
-          <div className="grid grid-cols-2 gap-px sm:grid-cols-4">
-            <Small label="FDV" value={formatUsd(toUsd(nextPrice * supply), 0)} />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Small label="FDV" value={formatUsd(toUsd(nextPrice * Number(TOKEN_TOTAL_SUPPLY)), 0)} />
             <Small label="Supply" value={`${supply.toLocaleString()} ${narrative.symbol}`} />
             <Small
               label="Creator holds"
@@ -318,7 +319,7 @@ export default function NarrativePage({
             />
             <Small label="Launched" value={formatDate(narrative.createdTs)} />
           </div>
-          <div className="grid grid-cols-2 gap-px sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Small label="Token" value={<FootLink href={explorerUrl(narrative.narrativeMint)}>{shortAddress(narrative.narrativeMint)}</FootLink>} />
             <Small label="Creator" value={<FootLink href={explorerUrl(narrative.creator)}>{shortAddress(narrative.creator)}</FootLink>} />
             <Small
@@ -346,7 +347,7 @@ export default function NarrativePage({
 
 function Figure({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="min-w-0 bg-neutral-50 px-4 py-3">
+    <div className="min-w-0 rounded bg-neutral-100 px-4 py-3">
       <div className="text-xs text-neutral-400">{label}</div>
       <div className="mono mt-1 truncate text-[15px] font-semibold text-neutral-900">{value}</div>
       {sub ? <div className="mono mt-0.5 truncate text-[11px] text-neutral-400">{sub}</div> : null}
@@ -356,7 +357,7 @@ function Figure({ label, value, sub }: { label: string; value: string; sub?: str
 
 function Small({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="min-w-0 bg-neutral-50 px-4 py-2.5">
+    <div className="min-w-0 rounded bg-neutral-100 px-4 py-2.5">
       <div className="text-[11px] text-neutral-400">{label}</div>
       <div className="mono mt-0.5 truncate text-[13px] text-neutral-900">{value}</div>
     </div>

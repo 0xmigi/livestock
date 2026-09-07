@@ -115,7 +115,7 @@ export function Highlight({ fallback }: { fallback: React.ReactNode }) {
   const h = useHighlight();
   useStocks();
   const { price } = useStockPrice(h ? h.narrative.stockMint : null);
-  if (h === undefined) return <div className="h-40 animate-pulse rounded bg-neutral-100" aria-hidden />;
+  if (h === undefined) return <div className="h-40 animate-pulse rounded bg-neutral-50" aria-hidden />;
   if (h === null) return <>{fallback}</>;
 
   const stock = stockFor(h.narrative.stockMint, h.narrative.stockDecimals);
@@ -123,7 +123,7 @@ export function Highlight({ fallback }: { fallback: React.ReactNode }) {
   return (
     <Link
       href={`/n/${h.narrative.address}`}
-      className="block rounded border border-neutral-200 bg-neutral-50 p-5 transition-colors hover:border-neutral-300"
+      className="lift block rounded bg-neutral-50 p-5"
     >
       <div className="text-xs text-neutral-400">Best trade this week</div>
 

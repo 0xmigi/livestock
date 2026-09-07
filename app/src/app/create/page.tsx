@@ -18,7 +18,9 @@ import {
   getCreateNarrativeInstruction,
   getCreateNarrativeMintInstructions,
   getNarrativeMintSize,
-  usdToStock,
+  initialVirtualStock,
+  openingState,
+  spotPrice,
 } from "@nm/client";
 import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { createNoopSigner, generateKeyPairSigner } from "@solana/kit";
@@ -46,7 +48,7 @@ import {
 } from "@/lib/config";
 import { fetchStockTokenProgram, formatDate } from "@/lib/narratives";
 import { useStockPrice } from "@/lib/price";
-import { matchesStock, useStocks } from "@/lib/stocks";
+import { matchesStock, useSolPrice, useStocks } from "@/lib/stocks";
 import { signAndSend, toUserMessage } from "@/lib/tx";
 
 // From the program's one-hour minimum up to two weeks. Short ones exist so a
@@ -145,12 +147,15 @@ export default function Create() {
 
   const decimals = stock?.decimals ?? 8;
 
-  // Curve defaults derived from the stock price, so the first token lands near
-  // $0.10 and reaches roughly $10 by a million, whatever the stock trades at.
-  const basePrice = usdToStock(0.1, price, decimals);
-  const slope = (usdToStock(10, price, decimals) - basePrice) / 1_000_000n;
-  const params = { basePrice, slope };
-  const toUsd = (units: bigint) => (Number(units) / 10 ** decimals) * price;
+  // The curve is pump.fun's. Its one free parameter is the opening stock
+  // reserve: 30 SOL in the stock, so every narrative opens at pump.fun's
+  // market cap whatever the stock trades at.
+  const solUsd = useSolPrice();
+  const virtualStock =
+    solUsd !== null && solUsd > 0 && price > 0 ? initialVirtualStock(solUsd, price, decimals) : 0n;
+  const curve = openingState(virtualStock);
+  const toUsd = (units: bigint | number) => (Number(units) / 10 ** decimals) * price;
+  const openingPrice = spotPrice(curve);
 
   const storyValid =
     image !== null &&
@@ -158,7 +163,7 @@ export default function Create() {
     name.length <= 32 &&
     symbol.trim().length > 0 &&
     symbol.length <= 10;
-  const valid = stock !== null && storyValid && basePrice > 0n && slope > 0n;
+  const valid = stock !== null && storyValid && virtualStock > 0n;
 
   const expiryPreview = Math.floor(Date.now() / 1000) + duration + LEAD_SECS;
   const index = STEPS.findIndex((s) => s.id === step);
@@ -255,8 +260,7 @@ export default function Create() {
             name: cleanName,
             symbol: cleanSymbol,
             expiryTs,
-            basePrice,
-            slope,
+            virtualStock,
             feeBps: FEE_BPS,
             sellTaxBps: SELL_TAX_BPS,
           }),
@@ -282,7 +286,7 @@ export default function Create() {
   };
 
   const previewCard = (
-    <div className="flex items-center gap-3 rounded border border-neutral-200 bg-neutral-50 p-3.5">
+    <div className="flex items-center gap-3 rounded bg-neutral-50 p-3.5">
       <Thumb src={preview ?? undefined} name={name || "?"} size={48} shape="square" />
       <div className="min-w-0 flex-1">
         <div className="display truncate text-lg leading-tight text-neutral-900">
@@ -303,7 +307,7 @@ export default function Create() {
   );
 
   const action = (
-    <div className="flex items-center gap-3 rounded border border-neutral-200 bg-neutral-50 p-2.5 pl-4">
+    <div className="flex items-center gap-3 rounded bg-neutral-50 p-2.5 pl-4">
       <div className="min-w-0 flex-1 truncate text-sm text-neutral-400">
         {step === "stock" && stock
           ? `Converts to ${stock.symbol}`
@@ -540,10 +544,8 @@ export default function Create() {
                     type="button"
                     onClick={() => setDuration(d.secs)}
                     aria-pressed={on}
-                    className={`rounded border p-4 text-left transition-colors ${
-                      on
-                        ? "border-accent bg-neutral-100"
-                        : "border-neutral-200 bg-neutral-50 hover:border-neutral-300"
+                    className={`lift rounded p-4 text-left ${
+                      on ? "bg-accent-light" : "bg-neutral-50"
                     }`}
                   >
                     <div className="display text-lg text-neutral-900">{d.label}</div>
@@ -553,12 +555,13 @@ export default function Create() {
               })}
             </div>
 
-            <div className="rounded border border-neutral-200 bg-neutral-50 p-4">
+            <div className="rounded bg-neutral-50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-neutral-900">Price curve</div>
                   <div className="mt-0.5 text-xs text-neutral-400">
-                    Set from {stock?.symbol ?? "the stock"}&apos;s price so the first token is about ten cents.
+                    The pump.fun curve, priced in {stock?.symbol ?? "the stock"}. Opens at 30 SOL of
+                    virtual liquidity, like every pump.fun launch.
                   </div>
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => setShowCurve((v) => !v)}>
@@ -567,12 +570,13 @@ export default function Create() {
               </div>
               {showCurve && stock ? (
                 <div className="mt-4 space-y-4">
-                  <CurvePreview params={params} stockPriceUsd={price} stockDecimals={decimals} stockSymbol={stock.symbol} />
-                  <dl className="mono space-y-1.5 border-t border-neutral-200 pt-4 text-xs">
-                    <Term label="Starting price">
-                      {formatStock(basePrice, decimals, 6)} {stock.symbol}
+                  <CurvePreview curve={curve} stockPriceUsd={price} stockDecimals={decimals} stockSymbol={stock.symbol} />
+                  <dl className="mono space-y-1.5 border-t border-neutral-100 pt-4 text-xs">
+                    <Term label="Opening liquidity">
+                      {formatStock(virtualStock, decimals, 4)} {stock.symbol} virtual
                     </Term>
-                    <Term label="Slope">{slope.toString()} base units per token</Term>
+                    <Term label="Total supply">1,000,000,000</Term>
+                    <Term label="On the curve">793,100,000</Term>
                     <Term label="Decimals">0, whole tokens only</Term>
                     <Term label="Your fee on every buy">{FEE_BPS / 100}%</Term>
                     <Term label="Exit tax, kept for holders who stay">{SELL_TAX_BPS / 100}%</Term>
@@ -605,10 +609,10 @@ export default function Create() {
               >
                 <Tile label="Converts to" value={stock.symbol} sub="paid in, paid out" />
                 <Tile label="Converts on" value={formatDate(expiryPreview).split(",")[0]} sub={formatDate(expiryPreview).split(",")[1]?.trim()} />
-                <Tile label="First token" value={formatUsdAuto(toUsd(basePrice))} sub={`${formatStock(basePrice, decimals, 6)} ${stock.symbol}`} />
+                <Tile label="Opening price" value={formatUsdAuto(toUsd(openingPrice))} sub="per token" />
                 <Tile label="Your fee" value={`${(FEE_BPS / 100).toFixed(2)}%`} sub="on every buy" />
                 <Tile label="Exit tax" value={`${SELL_TAX_BPS / 100}%`} sub="kept in the vault" />
-                <Tile label="Curve" value="Linear" sub="no cap on supply" />
+                <Tile label="Curve" value="pump.fun" sub="1B supply, 793.1M on the curve" />
               </Overview>
             ) : null}
 
@@ -627,14 +631,14 @@ export default function Create() {
       {/* What you are building, kept in view while you fill it in */}
       <aside className="hidden space-y-4 lg:sticky lg:top-6 lg:block">
         {previewCard}
-        <div className="rounded border border-neutral-200 bg-neutral-50 p-4">
+        <div className="rounded bg-neutral-50 p-4">
           <dl className="space-y-2.5 text-sm">
             <Summary label="Converts to">{stock ? stock.symbol : "—"}</Summary>
             <Summary label="Converts on">{formatDate(expiryPreview)}</Summary>
-            <Summary label="First token">{stock && price > 0 ? formatUsdAuto(toUsd(basePrice)) : "—"}</Summary>
+            <Summary label="Opening price">{stock && virtualStock > 0n ? formatUsdAuto(toUsd(openingPrice)) : "—"}</Summary>
             <Summary label="Your fee">{(FEE_BPS / 100).toFixed(2)}% on every buy</Summary>
             <Summary label="Exit tax">{SELL_TAX_BPS / 100}% kept in the vault</Summary>
-            <Summary label="Curve">Linear, no cap</Summary>
+            <Summary label="Curve">pump.fun, 1B supply</Summary>
           </dl>
         </div>
         <p className="px-1 text-xs leading-relaxed text-neutral-400">
@@ -664,11 +668,9 @@ function StockOption({
       disabled={!stock.available}
       aria-pressed={active}
       title={stock.available ? undefined : "Only on mainnet"}
-      className={`flex flex-col items-start gap-3 rounded border p-4 text-left transition-colors ${
-        active
-          ? "border-accent bg-neutral-100"
-          : "border-neutral-200 bg-neutral-50 hover:border-neutral-300"
-      } disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-neutral-200`}
+      className={`lift flex flex-col items-start gap-3 rounded p-4 text-left ${
+        active ? "bg-accent-light" : "bg-neutral-50"
+      } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       <StockLogo stock={stock} size={36} />
       <span className="min-w-0">

@@ -4,8 +4,11 @@ mod common;
 
 use {
     common::*,
-    narrative_markets::{
-        curve::{apply_bps, buy_cost, sell_refund},
+    livestock::{
+        curve::{
+            apply_bps, buy_cost, sell_refund, INITIAL_REAL_TOKEN_RESERVES,
+            INITIAL_VIRTUAL_TOKEN_RESERVES,
+        },
         state::{Narrative, Status},
     },
     solana_address::Address,
@@ -14,6 +17,15 @@ use {
 };
 
 const STOCK_FUNDING: u64 = 100_000_000_000; // 1,000 units of an 8-decimal mint
+
+/// The curve barely moves over a few thousand tokens out of a billion, so the
+/// economics tests trade in millions.
+const M: u64 = 1_000_000;
+
+/// What a fresh curve charges for `tokens`.
+fn opening_cost(tokens: u64) -> u64 {
+    buy_cost(VIRTUAL_STOCK, INITIAL_VIRTUAL_TOKEN_RESERVES, tokens).unwrap()
+}
 
 struct Market {
     env: Env,
@@ -54,8 +66,7 @@ fn setup_with(env: Env) -> Market {
             "ROBOTAXI",
             "RBTX",
             expiry,
-            BASE_PRICE,
-            SLOPE,
+            VIRTUAL_STOCK,
             FEE_BPS,
             SELL_TAX_BPS,
         )],
@@ -149,7 +160,9 @@ fn narrative_is_created_live_with_an_empty_vault() {
         assert_eq!(s.supply(), 0);
         assert_eq!(s.name(), b"ROBOTAXI");
         assert_eq!(s.symbol(), b"RBTX");
-        assert_eq!(s.base_price(), BASE_PRICE);
+        assert_eq!(s.virtual_stock(), VIRTUAL_STOCK);
+        assert_eq!(s.virtual_tokens(), INITIAL_VIRTUAL_TOKEN_RESERVES);
+        assert_eq!(s.remaining(), INITIAL_REAL_TOKEN_RESERVES);
     });
     assert_eq!(vault_balance(&m), 0);
 }
@@ -166,7 +179,7 @@ fn expiry_outside_the_permitted_window_is_rejected() {
 
     for bad in [now + 60, now + 91 * 24 * HOUR, now - HOUR] {
         let ix = create_narrative_ix(
-            &env, &key, &narrative_mint, &vault, "TOOSHORT", "TS", bad, BASE_PRICE, SLOPE,
+            &env, &key, &narrative_mint, &vault, "TOOSHORT", "TS", bad, VIRTUAL_STOCK,
             FEE_BPS, SELL_TAX_BPS,
         );
         assert!(
@@ -186,10 +199,10 @@ fn degenerate_curve_parameters_are_rejected() {
     let (narrative_mint, narrative) = env.create_narrative_mint();
     let vault = env.create_vault(&narrative);
 
-    // Zero base, zero slope, and an absurd fee each fail.
-    for (base, slope, fee) in [(0, SLOPE, FEE_BPS), (BASE_PRICE, 0, FEE_BPS), (BASE_PRICE, SLOPE, 5_000)] {
+    // An empty stock reserve and an absurd fee each fail.
+    for (virtual_stock, fee) in [(0, FEE_BPS), (VIRTUAL_STOCK, 5_000)] {
         let ix = create_narrative_ix(
-            &env, &key, &narrative_mint, &vault, "BAD", "BAD", expiry, base, slope, fee,
+            &env, &key, &narrative_mint, &vault, "BAD", "BAD", expiry, virtual_stock, fee,
             SELL_TAX_BPS,
         );
         assert!(env.send(&[ix], &[&creator]).is_err());
@@ -203,16 +216,20 @@ fn buying_moves_stock_into_the_vault_and_pays_the_creator() {
     let mut m = setup();
     let h = holder(&mut m);
 
-    let cost = buy_cost(0, 1_000, BASE_PRICE, SLOPE).unwrap();
+    let cost = opening_cost(M);
     let fee = apply_bps(cost, FEE_BPS).unwrap();
 
-    buy(&mut m, &h, 1_000);
+    buy(&mut m, &h, M);
 
-    assert_eq!(m.env.token_balance(&h.tokens), 1_000);
+    assert_eq!(m.env.token_balance(&h.tokens), M);
     assert_eq!(vault_balance(&m), cost);
     assert_eq!(m.env.token_balance(&m.creator_fee), fee);
     assert_eq!(m.env.token_balance(&h.stock), STOCK_FUNDING - cost - fee);
-    state(&m, |s| assert_eq!(s.supply(), 1_000));
+    state(&m, |s| {
+        assert_eq!(s.supply(), M);
+        assert_eq!(s.virtual_stock(), VIRTUAL_STOCK + cost);
+        assert_eq!(s.virtual_tokens(), INITIAL_VIRTUAL_TOKEN_RESERVES - M);
+    });
 }
 
 #[test]
@@ -221,12 +238,12 @@ fn the_second_buyer_pays_more_than_the_first() {
     let a = holder(&mut m);
     let b = holder(&mut m);
 
-    let first = buy_cost(0, 500, BASE_PRICE, SLOPE).unwrap();
-    let second = buy_cost(500, 500, BASE_PRICE, SLOPE).unwrap();
+    let first = opening_cost(50 * M);
+    let second = buy_cost(VIRTUAL_STOCK + first, INITIAL_VIRTUAL_TOKEN_RESERVES - 50 * M, 50 * M).unwrap();
     assert!(second > first);
 
-    buy(&mut m, &a, 500);
-    buy(&mut m, &b, 500);
+    buy(&mut m, &a, 50 * M);
+    buy(&mut m, &b, 50 * M);
     assert_eq!(vault_balance(&m), first + second);
 }
 
@@ -235,7 +252,7 @@ fn buy_respects_the_slippage_limit() {
     let mut m = setup();
     let h = holder(&mut m);
 
-    let cost = buy_cost(0, 100, BASE_PRICE, SLOPE).unwrap();
+    let cost = opening_cost(M);
     let fee = apply_bps(cost, FEE_BPS).unwrap();
     let ix = buy_ix(
         &m.env,
@@ -246,10 +263,55 @@ fn buy_respects_the_slippage_limit() {
         &m.creator_fee,
         &m.narrative,
         &m.vault,
-        100,
+        M,
         cost + fee - 1, // one base unit short
     );
     assert!(m.env.send(&[ix], &[&h.wallet]).is_err());
+}
+
+/// pump.fun sells 793.1M tokens and then migrates; a narrative sells the
+/// same 793.1M and then simply stops. Sells still work, and reopen the curve.
+#[test]
+fn the_curve_sells_out_at_the_real_reserve() {
+    let mut m = setup();
+    let whale = holder(&mut m);
+    // The whole reserve costs about 3.8 opening reserves; fund for it.
+    m.env.mint_stock_to(&whale.stock, 10 * VIRTUAL_STOCK);
+
+    buy(&mut m, &whale, INITIAL_REAL_TOKEN_RESERVES - 1);
+    state(&m, |s| assert_eq!(s.remaining(), 1));
+
+    // Two more is one too many.
+    let ix = buy_ix(
+        &m.env, &m.narrative_mint, &whale.wallet.pubkey(), &whale.tokens, &whale.stock,
+        &m.creator_fee, &m.narrative, &m.vault, 2, u64::MAX,
+    );
+    assert!(m.env.send(&[ix], &[&whale.wallet]).is_err(), "cannot buy past the reserve");
+
+    // The last one is fine, and then the curve is sold out.
+    buy(&mut m, &whale, 1);
+    state(&m, |s| {
+        assert_eq!(s.remaining(), 0);
+        assert_eq!(s.supply(), INITIAL_REAL_TOKEN_RESERVES);
+        assert_eq!(
+            s.virtual_tokens(),
+            INITIAL_VIRTUAL_TOKEN_RESERVES - INITIAL_REAL_TOKEN_RESERVES,
+        );
+    });
+    let ix = buy_ix(
+        &m.env, &m.narrative_mint, &whale.wallet.pubkey(), &whale.tokens, &whale.stock,
+        &m.creator_fee, &m.narrative, &m.vault, 1, u64::MAX,
+    );
+    assert!(m.env.send(&[ix], &[&whale.wallet]).is_err(), "sold out");
+
+    // Selling puts tokens back on the curve and buying resumes.
+    let ix = sell_ix(
+        &m.env, &m.narrative_mint, &whale.wallet.pubkey(), &whale.tokens, &whale.stock,
+        &m.narrative, &m.vault, 10, 0,
+    );
+    m.env.send(&[ix], &[&whale.wallet]).expect("sell after sell-out");
+    state(&m, |s| assert_eq!(s.remaining(), 10));
+    buy(&mut m, &whale, 10);
 }
 
 // --- sells ----------------------------------------------------------------
@@ -258,12 +320,13 @@ fn buy_respects_the_slippage_limit() {
 fn selling_walks_the_curve_back_down_and_the_tax_stays_behind() {
     let mut m = setup();
     let h = holder(&mut m);
-    buy(&mut m, &h, 1_000);
+    buy(&mut m, &h, 10 * M);
 
     let vault_before = vault_balance(&m);
     let stock_before = m.env.token_balance(&h.stock);
+    let (vstock, vtokens) = state(&m, |s| (s.virtual_stock(), s.virtual_tokens()));
 
-    let refund = sell_refund(1_000, 400, BASE_PRICE, SLOPE).unwrap();
+    let refund = sell_refund(vstock, vtokens, 4 * M).unwrap();
     let tax = apply_bps(refund, SELL_TAX_BPS).unwrap();
     let payout = refund - tax;
 
@@ -275,12 +338,12 @@ fn selling_walks_the_curve_back_down_and_the_tax_stays_behind() {
         &h.stock,
         &m.narrative,
         &m.vault,
-        400,
+        4 * M,
         0,
     );
     m.env.send(&[ix], &[&h.wallet]).expect("sell");
 
-    assert_eq!(m.env.token_balance(&h.tokens), 600);
+    assert_eq!(m.env.token_balance(&h.tokens), 6 * M);
     assert_eq!(m.env.token_balance(&h.stock), stock_before + payout);
     assert_eq!(
         vault_balance(&m),
@@ -288,7 +351,13 @@ fn selling_walks_the_curve_back_down_and_the_tax_stays_behind() {
         "the tax must remain in the vault for the holders who stayed",
     );
     assert!(tax > 0);
-    state(&m, |s| assert_eq!(s.supply(), 600));
+    state(&m, |s| {
+        assert_eq!(s.supply(), 6 * M);
+        // The whole refund leaves the curve, tax included: the tax is the
+        // vault's, not the curve's.
+        assert_eq!(s.virtual_stock(), vstock - refund);
+        assert_eq!(s.virtual_tokens(), vtokens + 4 * M);
+    });
 }
 
 #[test]
@@ -479,11 +548,11 @@ fn cannot_redeem_before_expiry() {
 fn buying_late_and_redeeming_is_always_a_loss() {
     let mut m = setup();
     let early = holder(&mut m);
-    buy(&mut m, &early, 10_000);
+    buy(&mut m, &early, 100 * M);
 
     let sniper = holder(&mut m);
     let spent_before = STOCK_FUNDING - m.env.token_balance(&sniper.stock);
-    buy(&mut m, &sniper, 500);
+    buy(&mut m, &sniper, 5 * M);
     let spent = STOCK_FUNDING - m.env.token_balance(&sniper.stock) - spent_before;
 
     expire(&mut m);
@@ -514,14 +583,14 @@ fn an_early_buyer_redeems_more_stock_than_they_paid() {
     let mut m = setup();
     let early = holder(&mut m);
 
-    let paid = buy_cost(0, 1_000, BASE_PRICE, SLOPE).unwrap();
+    let paid = opening_cost(10 * M);
     let fee = apply_bps(paid, FEE_BPS).unwrap();
-    buy(&mut m, &early, 1_000);
+    buy(&mut m, &early, 10 * M);
 
     // The narrative takes off after them.
     for _ in 0..4 {
         let late = holder(&mut m);
-        buy(&mut m, &late, 5_000);
+        buy(&mut m, &late, 100 * M);
     }
 
     expire(&mut m);
@@ -653,7 +722,7 @@ fn the_full_lifecycle_works_with_a_token_2022_stock() {
     let b = holder(&mut m);
 
     // Buy: stock moves in via TransferChecked against Token-2022.
-    let cost = buy_cost(0, 2_000, BASE_PRICE, SLOPE).unwrap();
+    let cost = opening_cost(2_000);
     let fee = apply_bps(cost, FEE_BPS).unwrap();
     buy(&mut m, &a, 2_000);
     assert_eq!(vault_balance(&m), cost);
@@ -743,7 +812,7 @@ fn a_mint_that_did_not_hand_over_authority_is_rejected() {
     let vault = env.create_vault(&narrative);
 
     let ix = create_narrative_ix(
-        &env, &key, &narrative_mint, &vault, "SNEAKY", "SNK", expiry, BASE_PRICE, SLOPE,
+        &env, &key, &narrative_mint, &vault, "SNEAKY", "SNK", expiry, VIRTUAL_STOCK,
         FEE_BPS, SELL_TAX_BPS,
     );
     assert!(
@@ -765,7 +834,7 @@ fn a_mint_with_a_freeze_authority_is_rejected() {
     let vault = env.create_vault(&narrative);
 
     let ix = create_narrative_ix(
-        &env, &key, &narrative_mint, &vault, "FREEZE", "FRZ", expiry, BASE_PRICE, SLOPE,
+        &env, &key, &narrative_mint, &vault, "FREEZE", "FRZ", expiry, VIRTUAL_STOCK,
         FEE_BPS, SELL_TAX_BPS,
     );
     assert!(env.send(&[ix], &[&creator]).is_err());
@@ -778,13 +847,14 @@ fn a_mint_with_the_wrong_decimals_is_rejected() {
     let key = creator.pubkey();
     let expiry = env.now() + DURATION;
 
-    // Decimals feed the curve directly; 6 would silently rescale every price.
+    // The curve's reserves are counted in whole tokens; 6 decimals would put a
+    // million times more tokens on it than the reserves account for.
     let (narrative_mint, narrative) =
         env.create_narrative_mint_with(None, None, Some(6), Delegate::Narrative);
     let vault = env.create_vault(&narrative);
 
     let ix = create_narrative_ix(
-        &env, &key, &narrative_mint, &vault, "DECIMALS", "DEC", expiry, BASE_PRICE, SLOPE,
+        &env, &key, &narrative_mint, &vault, "DECIMALS", "DEC", expiry, VIRTUAL_STOCK,
         FEE_BPS, SELL_TAX_BPS,
     );
     assert!(env.send(&[ix], &[&creator]).is_err());
@@ -853,7 +923,7 @@ fn a_mint_whose_delegate_is_not_the_narrative_is_rejected() {
         let vault = env.create_vault(&narrative);
         let ix = create_narrative_ix(
             &env, &creator.pubkey(), &mint, &vault, "ROBOTAXI", "RBTX", expiry,
-            BASE_PRICE, SLOPE, FEE_BPS, SELL_TAX_BPS,
+            VIRTUAL_STOCK, FEE_BPS, SELL_TAX_BPS,
         );
         assert!(env.send(&[ix], &[&creator]).is_err());
     }

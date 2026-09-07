@@ -3,7 +3,7 @@
  *
  * The program is Pinocchio, so there is no IDL — instruction data is encoded by
  * hand here and must stay in step with
- * `programs/narrative_markets/src/lib.rs`.
+ * `programs/livestock/src/lib.rs`.
  */
 
 import { AccountRole, type Address, type Instruction } from "@solana/kit";
@@ -84,10 +84,11 @@ export type CreateNarrativeInput = {
   symbol: string;
   /** Unix seconds. Immutable once set. */
   expiryTs: bigint;
-  /** Stock base units for the first token. */
-  basePrice: bigint;
-  /** Stock base units added to the price per token sold. */
-  slope: bigint;
+  /**
+   * The curve's opening virtual stock reserve, in stock base units — what
+   * 30 SOL is worth in the stock. See `initialVirtualStock`.
+   */
+  virtualStock: bigint;
   feeBps: number;
   sellTaxBps: number;
 };
@@ -118,8 +119,7 @@ export function getCreateNarrativeInstruction(
     data: encode(
       NarrativeInstruction.CreateNarrative,
       i64le(input.expiryTs),
-      u64le(input.basePrice),
-      u64le(input.slope),
+      u64le(input.virtualStock),
       u16le(input.feeBps),
       u16le(input.sellTaxBps),
       new Uint8Array([name.length]),

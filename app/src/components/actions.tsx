@@ -17,11 +17,13 @@
 import { useEffect, useState } from "react";
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
 import {
+  afterBuy,
   applyBps,
   buyCost,
   formatStock,
   netSellProceeds,
   proRata,
+  remaining,
   sellRefund,
   spotPrice,
   tokensForStock,
@@ -177,8 +179,7 @@ export function BuyPanel({
     decimals: stock.decimals,
     tokenProgram: narrative.stockTokenProgram,
   };
-  const params = { basePrice: narrative.basePrice, slope: narrative.slope };
-  const toUsd = (units: bigint) =>
+  const toUsd = (units: bigint | number) =>
     (Number(units) / 10 ** stock.decimals) * stockPrice;
 
   const solUsd = useSolPrice();
@@ -216,25 +217,19 @@ export function BuyPanel({
 
   // Sized from the least the swap can deliver, so the buy cannot come up short.
   const stockIn = quote?.minStockOut ?? (stockPrice > 0 ? usdToStock(usd || 0, stockPrice, stock.decimals) : 0n);
-  const tokens = tokensForStock(
-    narrative.supply,
-    stockIn,
-    params,
-    narrative.feeBps,
-  );
-  const cost = tokens > 0n ? buyCost(narrative.supply, tokens, params) : 0n;
+  const left = remaining(narrative.supply);
+  const soldOut = left === 0n;
+  const tokens = tokensForStock(narrative, narrative.supply, stockIn, narrative.feeBps);
+  const cost = tokens > 0n ? buyCost(narrative, tokens) : 0n;
   const fee = applyBps(cost, narrative.feeBps);
   const maxIn = cost + fee;
   const solIn = Number(lamports) / Number(LAMPORTS_PER_SOL);
 
   // Price impact: how far your own buy pushes the marginal price.
-  const before = spotPrice(narrative.supply, params);
-  const after = spotPrice(narrative.supply + tokens, params);
-  const impactPct =
-    tokens > 0n && before > 0n
-      ? (Number(after - before) / Number(before)) * 100
-      : 0;
-  const avgPerToken = tokens > 0n ? cost / tokens : 0n;
+  const before = spotPrice(narrative);
+  const after = tokens > 0n ? spotPrice(afterBuy(narrative, tokens)) : before;
+  const impactPct = tokens > 0n && before > 0 ? ((after - before) / before) * 100 : 0;
+  const avgPerToken = tokens > 0n ? Number(cost) / Number(tokens) : 0;
 
   const stockBalance = position?.stockBalance ?? 0n;
   const insufficient =
@@ -243,10 +238,10 @@ export function BuyPanel({
   const held = position?.tokens ?? 0n;
   const sellAll = held > 0n && held <= narrative.supply;
   const proceeds = sellAll
-    ? netSellProceeds(narrative.supply, held, params, narrative.sellTaxBps)
+    ? netSellProceeds(narrative, held, narrative.sellTaxBps)
     : 0n;
   const tax = sellAll
-    ? applyBps(sellRefund(narrative.supply, held, params), narrative.sellTaxBps)
+    ? applyBps(sellRefund(narrative, held), narrative.sellTaxBps)
     : 0n;
 
   const buy = async () => {
@@ -336,7 +331,7 @@ export function BuyPanel({
   return (
     <div className="space-y-3">
       {held > 0n ? (
-        <div className="flex gap-5 border-b border-neutral-200 text-sm font-medium">
+        <div className="flex gap-5 text-sm font-medium">
           <button
             type="button"
             aria-pressed={mode === "buy"}
@@ -436,7 +431,7 @@ export function BuyPanel({
           </div>
 
           {details && tokens > 0n ? (
-            <div className="space-y-1.5 border-t border-neutral-200 pt-3">
+            <div className="space-y-1.5 border-t border-neutral-100 pt-3">
               <Line label="You receive" strong>
                 {tokens.toLocaleString()} {narrative.symbol}
               </Line>
@@ -473,11 +468,14 @@ export function BuyPanel({
               That is more SOL than this wallet holds, after keeping{" "}
               {SOL_RESERVE} SOL for fees. Lower the amount or top up.
             </Notice>
+          ) : soldOut ? (
+            <Notice kind="warning">
+              Sold out. Every token the curve will ever sell has been bought; more come back only
+              when someone sells.
+            </Notice>
           ) : tokens === 0n && stockIn > 0n ? (
             <p className="text-sm text-neutral-400">
-              Minimum one token. The curve starts at{" "}
-              {formatStock(narrative.basePrice, stock.decimals, 6)} {stock.symbol}{" "}
-              (≈ {formatUsdAuto(toUsd(narrative.basePrice))}).
+              Minimum one token, which is {formatUsdAuto(toUsd(before))} right now.
             </p>
           ) : null}
 
@@ -493,7 +491,7 @@ export function BuyPanel({
         </>
       ) : (
         <>
-          <div className="rounded border border-neutral-200 bg-neutral-100 px-3.5 py-3">
+          <div className="rounded bg-neutral-100 px-3.5 py-3">
             <div className="mono text-xs text-neutral-400">
               {held.toLocaleString()} {narrative.symbol}
             </div>
@@ -604,7 +602,7 @@ export function RedeemPanel({
 
   return (
     <div className="space-y-4">
-      <Panel className="rounded border border-neutral-200 px-3.5 py-3">
+      <Panel className="px-3.5 py-3">
         <div className="text-xs text-neutral-400">Your claim</div>
         <div className="numeric mt-0.5 text-2xl font-semibold tracking-tight text-neutral-900">
           {formatStock(payout, stock.decimals, 4)}{" "}

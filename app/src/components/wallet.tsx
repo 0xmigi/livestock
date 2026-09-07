@@ -181,7 +181,7 @@ export function AccountMenu({
       <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
       <div
         role="menu"
-        className={`${position} overflow-hidden rounded border border-neutral-200 bg-ground shadow-xl`}
+        className={`${position} overflow-hidden rounded bg-neutral-100 shadow-xl shadow-black/30`}
       >
         <div className="flex items-center gap-3 p-4">
           <Avatar seed={owner} size={36} />
@@ -211,7 +211,7 @@ export function AccountMenu({
           </div>
         </div>
         {/* What you have created. Each opens its page, where the creator can edit it. */}
-        <div className="border-t border-neutral-200">
+        <div className="border-t border-neutral-200/60">
           <p className="px-4 pt-3 text-xs text-neutral-400">Created</p>
           {rows === null ? (
             <p className="px-4 pb-3 pt-1 text-sm text-neutral-400">…</p>
@@ -227,7 +227,7 @@ export function AccountMenu({
                     <Link
                       href={`/n/${n.address}`}
                       onClick={onClose}
-                      className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-neutral-50"
+                      className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-neutral-200"
                     >
                       <Thumb src={n.meta?.image} name={n.name} size={28} shape="square" />
                       <span className="min-w-0 flex-1">
@@ -257,7 +257,7 @@ export function AccountMenu({
             onClose();
             void logout();
           }}
-          className="block w-full border-t border-neutral-200 px-4 py-3 text-left text-sm text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900"
+          className="block w-full border-t border-neutral-200/60 px-4 py-3 text-left text-sm text-neutral-600 transition-colors hover:bg-neutral-200 hover:text-neutral-900"
         >
           Log out
         </button>

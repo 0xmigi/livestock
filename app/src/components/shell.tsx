@@ -4,7 +4,8 @@
  * Page frame. One container width everywhere, and a header that is identical
  * on every page, so nothing shifts when you navigate.
  *
- * Desktop: wordmark, then Create and account on the right.
+ * Desktop: wordmark, then Create and account on the right. A footer under
+ * every page.
  * Mobile: wordmark and account in the bar; Markets, Create and Account in a
  * floating tab bar at the bottom.
  */
@@ -16,6 +17,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { LineChart, Plus, UserRound } from "lucide-react";
 
 import { Wordmark } from "./logo";
+import { Footer } from "./footer";
 import { Wash } from "./wash";
 import { Button } from "./ui";
 import { AccountChip, AccountMenu, isActivePath, useOwner } from "./wallet";
@@ -48,7 +50,10 @@ export function Shell({
         </div>
       </header>
 
-      <main className={`${CONTAINER} relative z-[1] flex-1 pb-32 pt-4 sm:pb-28 sm:pt-8`}>{children}</main>
+      <main className={`${CONTAINER} relative z-[1] flex-1 pt-4 sm:pt-8`}>{children}</main>
+
+      {/* Clearance at the bottom for the tab bar on phones and the pinned bar when there is one. */}
+      <Footer className={`${CONTAINER} mt-24 pb-32 sm:mt-28 sm:pb-12`} />
 
       {bottom ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 sm:bottom-6">
@@ -75,7 +80,7 @@ function TabBar() {
 
   return (
     <>
-      <nav className="fixed inset-x-4 bottom-4 z-40 flex gap-1 rounded border border-neutral-200 bg-neutral-50/95 p-1.5 shadow-lg backdrop-blur sm:hidden">
+      <nav className="fixed inset-x-4 bottom-4 z-40 flex gap-1 rounded bg-neutral-50/95 p-1.5 shadow-xl shadow-black/20 backdrop-blur sm:hidden">
         <Link href="/" className={`${base} ${isActivePath(pathname, "/") ? on : off}`}>
           <LineChart className="h-5 w-5" strokeWidth={2} />
           Markets

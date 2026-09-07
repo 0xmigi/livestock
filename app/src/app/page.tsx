@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, ChevronDown, Plus, Search, Sprout } from "lucide-react";
-import { formatStock, redemptionPerToken, secondsRemaining, spotPrice } from "@nm/client";
+import { formatStock, redemptionPerToken, secondsRemaining } from "@nm/client";
 
 import { Highlight } from "@/components/highlight";
 import { Shell } from "@/components/shell";
@@ -19,9 +19,9 @@ import {
   StatusDot,
   StockLogo,
   TimeBar,
-  type Phase,
 } from "@/components/ui";
 import { formatUsd, formatUsdAuto } from "@/lib/config";
+import { backingOf, compact, fdvOf, formatAgo, isLivePhase, tokenPriceOf, usdOf } from "@/lib/figures";
 import { usePriceChange } from "@/lib/change";
 import { useStockMeta } from "@/lib/logos";
 import {
@@ -39,47 +39,6 @@ type Sort = "fdv" | "new";
 
 const PAGE = 20;
 const WEEK = 7 * 24 * 3600;
-
-function isLivePhase(phase: Phase): boolean {
-  return phase === "live" || phase === "closing";
-}
-
-function backingOf(n: NarrativeRow, phase: Phase): bigint {
-  return isLivePhase(phase) || phase === "settling" ? n.vaultBalance : n.finalVault;
-}
-
-function priceOf(n: NarrativeRow, prices: Record<string, number>): number {
-  return prices[n.stockMint] ?? n.stock.fallbackPriceUsd;
-}
-
-function usdOf(n: NarrativeRow, units: bigint, prices: Record<string, number>): number {
-  return (Number(units) / 10 ** n.stock.decimals) * priceOf(n, prices);
-}
-
-/** What the next token costs, in dollars. */
-function tokenPriceOf(n: NarrativeRow, prices: Record<string, number>): number {
-  return usdOf(n, spotPrice(n.supply, n), prices);
-}
-
-/** Spot price times supply, the number every launchpad leads with. */
-function fdvOf(n: NarrativeRow, prices: Record<string, number>): number {
-  const supply = n.status === 0 ? n.supply : n.finalSupply;
-  return usdOf(n, spotPrice(n.supply, n) * supply, prices);
-}
-
-/** `3h ago`, `2d ago`. */
-function formatAgo(seconds: number): string {
-  const s = Math.max(0, seconds);
-  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86_400)}d ago`;
-}
-
-function compact(usd: number): string {
-  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(usd >= 1e7 ? 0 : 1)}M`;
-  if (usd >= 1e4) return `$${(usd / 1e3).toFixed(0)}k`;
-  return formatUsd(usd, 0);
-}
 
 export default function Markets() {
   const { rows, error } = useNarratives();
@@ -143,7 +102,7 @@ export default function Markets() {
     <Shell>
       <div className="space-y-10">
         {/* Hero: the pitch, and the numbers so far */}
-        <section className="grid gap-8 border-b border-neutral-200 pb-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
+        <section className="grid gap-8 pb-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
           <div className="max-w-xl">
             <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl">
               Buy the narrative.
@@ -161,9 +120,9 @@ export default function Markets() {
           {/* Proof over pitch: the week's best trade, or the tally until there is one. */}
           <Highlight
             fallback={
-              <div className="rounded border border-neutral-200 bg-neutral-50 p-5">
+              <div className="rounded bg-neutral-50 p-5">
                 <div className="text-sm text-neutral-400">Livestock so far</div>
-                <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200">
+                <div className="mt-4 grid grid-cols-3 gap-2">
                   <Stat label="launched" value={rows ? String(stats.launched) : "—"} />
                   <Stat label="combined FDV" value={rows ? compact(stats.fdv) : "—"} />
                   <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
@@ -188,7 +147,7 @@ export default function Markets() {
 
         {/* The list */}
         <section className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1">
             <Segmented
               size="sm"
               value={view}
@@ -214,7 +173,7 @@ export default function Markets() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search"
-                className="h-9 w-full rounded border border-neutral-200 bg-neutral-50 pl-9 pr-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400"
+                className="h-8 w-full rounded border border-neutral-200 bg-neutral-50 pl-9 pr-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400"
                 aria-label="Search narratives"
               />
             </label>
@@ -262,31 +221,15 @@ export default function Markets() {
         </section>
 
         {/* How it works, for whoever scrolled this far */}
-        <section className="overflow-hidden rounded border border-neutral-200 bg-neutral-50">
-          <div className="mono border-b border-neutral-200 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+        <section id="how-it-works" className="scroll-mt-8 rounded bg-neutral-50 p-2">
+          <div className="mono px-3 pb-2.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
             How it works
           </div>
-          <div className="grid gap-px bg-neutral-200 sm:grid-cols-2 lg:grid-cols-4">
-            <Step
-              n="00"
-              title="Pick a narrative"
-              body="Something you think is about to happen to a company: a launch, a ruling, a number. Each one is tied to that company's stock and ends on a set date. Find one, or create your own."
-            />
-            <Step
-              n="01"
-              title="Buy in with SOL"
-              body="Your SOL becomes the stock and goes into the narrative's vault. You get tokens. Every buy costs a little more than the one before it."
-            />
-            <Step
-              n="02"
-              title="Sell into the hype, or hold"
-              body="Sell any time and take the stock out, minus a 10% exit tax that stays in the vault for whoever holds. Or keep your tokens until the date."
-            />
-            <Step
-              n="03"
-              title="It turns into the stock"
-              body="On the date, trading stops and the vault is paid out across every token, automatically. You end up holding the company. How much depends on your timing."
-            />
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <Step n="00" title="Pick a narrative" body="A story about a company, tied to its stock, with an end date. Find one or make one." />
+            <Step n="01" title="Buy with SOL" body="Your SOL becomes the stock and goes in the vault. You get tokens. Price follows supply: buys push it up, sells push it down." />
+            <Step n="02" title="Sell or hold" body="Sell any time before the date. A 10% exit tax stays in the vault for whoever holds on." />
+            <Step n="03" title="It becomes the stock" body="On the date, the vault is split across every token and sent to holders. Nothing to claim." />
           </div>
         </section>
       </div>
@@ -296,7 +239,7 @@ export default function Markets() {
 
 function Step({ n, title, body }: { n: string; title: string; body: string }) {
   return (
-    <div className="bg-neutral-50 p-5">
+    <div className="rounded bg-neutral-100 p-4">
       <div className="flex items-baseline gap-2">
         <span className="mono text-xs font-semibold text-accent">{n}</span>
         <span className="text-[15px] font-semibold text-neutral-900">{title}</span>
@@ -308,7 +251,7 @@ function Step({ n, title, body }: { n: string; title: string; body: string }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-neutral-50 px-3 py-3">
+    <div className="rounded bg-neutral-100 px-3 py-3">
       <div className="mono text-xl font-semibold leading-none text-neutral-900 sm:text-2xl">{value}</div>
       <div className="mt-1.5 text-[11px] text-neutral-400">{label}</div>
     </div>
@@ -330,7 +273,7 @@ function Feature({
   kind: "new" | "fdv" | "time";
   loading: boolean;
 }) {
-  const frame = "w-[78vw] shrink-0 snap-start rounded border border-neutral-200 bg-neutral-50 p-4 sm:w-auto";
+  const frame = "w-[78vw] shrink-0 snap-start rounded bg-neutral-50 p-4 sm:w-auto";
   if (loading) {
     return (
       <div className={frame} aria-hidden>
@@ -363,7 +306,7 @@ function Feature({
         : `${formatUsdAuto(tokenPriceOf(n, prices))} per token`;
 
   return (
-    <Link href={`/n/${n.address}`} className={`${frame} block transition-colors hover:border-neutral-300`}>
+    <Link href={`/n/${n.address}`} className={`${frame} lift block`}>
       <div className="text-xs text-neutral-400">{label}</div>
       <div className="mt-3 flex items-center gap-3">
         <Thumb src={n.meta?.image} name={n.name} size={40} shape="square" />
@@ -408,14 +351,14 @@ function StockMenu({
         onBlur={() => setTimeout(() => setOpen(false), 120)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex h-9 items-center gap-2 rounded border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-900 hover:bg-neutral-100"
+        className="flex h-7 items-center gap-1.5 rounded px-2.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900"
       >
         {current ? <StockLogo stock={current} size={16} /> : <span className="text-neutral-400">Underlying</span>}
         {current ? <span className="mono">{current.symbol}</span> : "All"}
         <ChevronDown className="h-3.5 w-3.5 text-neutral-400" />
       </button>
       {open ? (
-        <ul role="listbox" className="absolute left-0 z-20 mt-1 max-h-80 w-56 overflow-auto rounded border border-neutral-200 bg-ground py-1 shadow-xl">
+        <ul role="listbox" className="absolute left-0 z-20 mt-1 max-h-80 w-56 overflow-auto rounded bg-neutral-100 py-1 shadow-xl shadow-black/30">
           <li>
             <button
               type="button"
@@ -425,7 +368,7 @@ function StockMenu({
                 onChange(null);
                 setOpen(false);
               }}
-              className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-neutral-900 hover:bg-neutral-50"
+              className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-neutral-900 hover:bg-neutral-200"
             >
               All
               {value === null ? <Check className="h-3.5 w-3.5" /> : null}
@@ -441,7 +384,7 @@ function StockMenu({
                   onChange(value === s.mint ? null : s.mint);
                   setOpen(false);
                 }}
-                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-neutral-50"
+                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-neutral-200"
               >
                 <StockLogo stock={s} size={18} />
                 <span className="min-w-0 flex-1 truncate">
@@ -468,14 +411,14 @@ type ListProps = {
 /** Phones: one compact row per narrative, no horizontal scrolling. */
 function MobileList({ rows, now, prices, view }: ListProps) {
   return (
-    <div className="divide-y divide-neutral-200 overflow-hidden rounded border border-neutral-200 bg-neutral-50">
+    <div className="divide-y divide-neutral-100 overflow-hidden rounded bg-neutral-50">
       {rows.map((n) => {
         const remaining = secondsRemaining(n, now);
         const phase = phaseOf(n.status, remaining);
         const backing = backingOf(n, phase);
         const perToken = redemptionPerToken(n);
         return (
-          <Link key={n.address} href={`/n/${n.address}`} className="block px-4 py-3.5 active:bg-neutral-100">
+          <Link key={n.address} href={`/n/${n.address}`} className="block px-4 py-3.5 transition-colors active:bg-press">
             <div className="flex items-center gap-3">
               <Thumb src={n.meta?.image} name={n.name} size={44} shape="square" />
               <div className="min-w-0 flex-1">
@@ -507,10 +450,10 @@ function Table({ rows, now, prices, view }: ListProps) {
   const meta = useStockMeta();
   const th = "px-4 py-2.5 text-left text-xs font-medium text-neutral-400";
   return (
-    <div className="overflow-hidden rounded border border-neutral-200 bg-neutral-50">
+    <div className="overflow-hidden rounded bg-neutral-50">
       <table className="w-full border-collapse">
         <thead>
-          <tr className="border-b border-neutral-200">
+          <tr className="border-b border-neutral-100">
             <th className={th}>Narrative</th>
             <th className={th}>Converts to</th>
             {view === "live" ? <th className={`${th} text-right`}>Price</th> : null}
@@ -530,7 +473,7 @@ function Table({ rows, now, prices, view }: ListProps) {
               <tr
                 key={n.address}
                 onClick={() => router.push(href)}
-                className="cursor-pointer border-b border-neutral-200 transition-colors last:border-b-0 hover:bg-neutral-100"
+                className="cursor-pointer border-b border-neutral-100 transition-colors last:border-b-0 hover:bg-hover active:bg-press"
               >
                 <td className="px-4 py-3">
                   <Link href={href} className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
@@ -598,9 +541,9 @@ function Change24h({ n, className = "" }: { n: NarrativeRow; className?: string 
 
 function Skeleton() {
   return (
-    <div className="overflow-hidden rounded border border-neutral-200 bg-neutral-50" aria-hidden>
+    <div className="overflow-hidden rounded bg-neutral-50" aria-hidden>
       {[0, 1, 2, 3, 4].map((i) => (
-        <div key={i} className="flex items-center gap-3 border-b border-neutral-200 px-4 py-3 last:border-b-0">
+        <div key={i} className="flex items-center gap-3 border-b border-neutral-100 px-4 py-3 last:border-b-0">
           <div className="h-9 w-9 animate-pulse rounded bg-neutral-100" />
           <div className="flex-1 space-y-2">
             <div className="h-4 w-40 animate-pulse rounded bg-neutral-100" />

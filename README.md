@@ -21,7 +21,7 @@ position becomes equity by default, so you never have to find a greater fool.
 ## Layout
 
 ```
-programs/narrative_markets   Pinocchio program (the crate keeps its original name)
+programs/livestock   Pinocchio program
 client/                      @nm/client — @solana/kit instruction builders, decoders, mint builder
 app/                         @nm/app — Next.js frontend (Privy wallets, Moment-style UI)
 scripts/                     @nm/scripts — devnet seed and diagnostics
@@ -50,20 +50,20 @@ the command line, against the dev server:
 BUYER_KEYPAIR=<path to a devnet keypair> SOL=0.05 pnpm --filter @nm/scripts run swap-buy
 ```
 
-Program tests (36, LiteSVM + curve unit tests):
+Program tests (42, LiteSVM + curve unit tests):
 
 ```bash
-cargo build-sbf && cargo test -p narrative_markets
+cargo build-sbf && cargo test -p livestock
 ```
 
 Upgrade the devnet program (the upgrade authority is your Solana CLI wallet;
 the program keypair is only needed for a first deploy and is not committed):
 
 ```bash
-cargo build-sbf && solana program deploy target/deploy/narrative_markets.so --program-id 7WbnkZ57UvAPzy3rNqErZW57xnhUdnqwXnDm34dGV2SX -u devnet
+cargo build-sbf && solana program deploy target/deploy/livestock.so --program-id 5X7RTCFFLgCpsRiskzm1gBEQmbzBEL39H6WpN9YzSizB -u devnet
 ```
 
-Do not pass `target/deploy/narrative_markets-keypair.json` as the program id:
+Do not pass `target/deploy/livestock-keypair.json` as the program id:
 `cargo build-sbf` generates that file and it is a different, unrelated key.
 
 The stock registry comes from the Tokens API (`TOKENS_API_KEY`, read by

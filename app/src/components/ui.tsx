@@ -57,7 +57,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded border border-neutral-200 bg-neutral-50 p-4 sm:p-5 ${className}`}
+      className={`rounded bg-neutral-50 p-4 sm:p-5 ${className}`}
     >
       {children}
     </div>
@@ -203,11 +203,11 @@ export function Button({
     accent:
       "bg-accent text-on-accent hover:bg-accent-hover disabled:bg-neutral-200 disabled:text-neutral-400",
     buy: "bg-buy text-white hover:bg-buy-hover disabled:bg-neutral-200 disabled:text-neutral-400",
-    sell: "border border-danger/60 bg-transparent text-danger hover:bg-danger-fill disabled:border-neutral-200 disabled:text-neutral-400",
+    sell: "bg-danger-fill text-danger hover:brightness-110 disabled:bg-neutral-200 disabled:text-neutral-400",
     secondary:
-      "border border-neutral-200 bg-neutral-50 text-neutral-900 hover:bg-neutral-100 disabled:text-neutral-400",
+      "bg-neutral-100 text-neutral-900 hover:bg-neutral-200 disabled:text-neutral-400",
     outline:
-      "border border-neutral-200 bg-transparent text-neutral-900 hover:bg-neutral-50 disabled:text-neutral-400",
+      "bg-transparent text-neutral-900 hover:bg-neutral-50 disabled:text-neutral-400",
     ghost: "text-neutral-600 hover:text-neutral-900 disabled:text-neutral-400",
   };
   const sizes = {
@@ -219,7 +219,7 @@ export function Button({
   return (
     <button
       type="button"
-      className={`rounded font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`rounded font-medium transition-[color,background-color,transform] active:translate-y-px disabled:cursor-not-allowed disabled:active:translate-y-0 ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >
       {children}
@@ -247,7 +247,7 @@ export function Chip({
       className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded py-1.5 pl-3 pr-3 text-sm font-medium transition-colors ${
         active
           ? "bg-neutral-900 text-ground"
-          : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900"
+          : "bg-neutral-50 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900"
       } ${className}`}
       {...props}
     >
@@ -277,7 +277,7 @@ export function Tabs<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex gap-6 border-b border-neutral-200">
+    <div className="flex gap-6">
       {options.map((o) => {
         const active = value === o.value;
         return (
@@ -318,19 +318,19 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   size?: "sm" | "md";
 }) {
-  const pad = size === "sm" ? "h-9 px-3 text-sm" : "py-2.5 px-4 text-sm";
+  const pad = size === "sm" ? "h-7 px-2.5 text-xs" : "py-2 px-4 text-sm";
   return (
-    <div className="flex overflow-hidden rounded border border-neutral-200 bg-neutral-50">
+    <div className="flex gap-0.5 rounded">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`flex-1 whitespace-nowrap border-r border-neutral-200 font-medium transition-colors last:border-r-0 ${pad} ${
+          className={`flex-1 whitespace-nowrap rounded-[3px] font-medium transition-colors ${pad} ${
             value === o.value
-              ? "bg-neutral-100 text-neutral-900"
-              : "text-neutral-400 hover:text-neutral-900"
+              ? "bg-neutral-200 text-neutral-900"
+              : "text-neutral-400 hover:bg-neutral-50 hover:text-neutral-900"
           }`}
         >
           {o.label}
