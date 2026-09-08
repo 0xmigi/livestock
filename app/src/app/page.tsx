@@ -105,9 +105,6 @@ export default function Markets() {
   return (
     <Shell>
       <div className="space-y-10">
-        {/* Every tokenized stock's price, live, across the top. Real data, all day, whatever is launched. */}
-        <Ticker />
-
         {/* Hero: the pitch, and the numbers so far */}
         <section className="grid pb-6 lg:grid-cols-3 lg:gap-x-3">
           {/* Headline on its own row; the button and the chart share the next, so the chart hangs from the button's line. */}
@@ -150,6 +147,9 @@ export default function Markets() {
         ) : error ? (
           <Notice kind="error">Could not reach the network: {error}</Notice>
         ) : null}
+
+        {/* Tokenized stock prices, live, drifting by between the pitch and the market. Real data whatever is launched. */}
+        <Ticker />
 
         {/* The list */}
         <section className="space-y-4">
@@ -207,8 +207,6 @@ export default function Markets() {
           )}
         </section>
 
-        {/* The stocks narratives are built on, always. Real prices; each one a click from launching. */}
-        {rows !== null && list.length > 0 ? <StockGrid stocks={stocks} /> : null}
 
       </div>
     </Shell>

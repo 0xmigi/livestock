@@ -393,9 +393,9 @@ input[type="number"] {
   to { opacity: 1; transform: none; }
 }
 
-/* The price tape: one long row, duplicated once, sliding left forever. */
+/* The price tape: one long row, duplicated once, drifting left slowly enough to ignore. */
 .ticker-track {
-  animation: ticker 80s linear infinite;
+  animation: ticker 360s linear infinite;
 }
 .ticker:hover .ticker-track {
   animation-play-state: paused;
