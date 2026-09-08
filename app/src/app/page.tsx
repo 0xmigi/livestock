@@ -94,12 +94,12 @@ export default function Markets() {
         <section className="grid pb-6 lg:grid-cols-3 lg:gap-x-3">
           {/* Headline on its own row; the button and the chart share the next, so the chart hangs from the button's line. */}
           <h1 className="max-w-2xl text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl lg:col-span-3 lg:row-start-1">
-            Buy live narratives.
+            Build narratives
             <br />
-            <span className="text-neutral-400">Expire into real stocks.</span>
+            <span className="text-neutral-400">that expire into stocks</span>
           </h1>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-neutral-400 lg:col-span-3 lg:row-start-2">
-            A token for a story about a stock. Every buy fills a vault of that stock, and on the date every token
+            A token for a story about a stock: every buy fills a vault of that stock, and on the date every token
             becomes it.
           </p>
           <div className="mt-7 lg:col-start-1 lg:row-start-3 lg:self-start">

@@ -9,7 +9,7 @@ export const APP_NAME = "Livestock";
 
 /** The bio is a hard cap, the way a profile bio is. */
 export const BIO_MAX_CHARS = 160;
-export const TAGLINE = "Buy live narratives that expire into real stocks.";
+export const TAGLINE = "Build narratives that expire into stocks.";
 
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
