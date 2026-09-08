@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Sprout } from "lucide-react";
 import { formatStock, redemptionPerToken, secondsRemaining } from "@nm/client";
 
+import { Explainer } from "@/components/explainer";
 import { Highlight } from "@/components/highlight";
 import { Shell } from "@/components/shell";
 import { Thumb } from "@/components/thumb";
@@ -112,12 +113,12 @@ export default function Markets() {
     <Shell>
       <div className="space-y-10">
         {/* Hero: the pitch, and the numbers so far */}
-        <section className="grid gap-8 pb-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
+        <section className="grid gap-8 pb-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
           <div className="max-w-xl">
             <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl">
-              Buy live narratives
+              Buy live narratives.
               <br />
-              <span className="text-neutral-400">that expire into real stocks.</span>
+              <span className="text-neutral-400">Expire into real stocks.</span>
             </h1>
             <Link href="/create" className="mt-7 inline-block">
               <Button variant="primary" size="lg" className="flex items-center gap-2">
@@ -130,7 +131,7 @@ export default function Markets() {
           {/* Proof over pitch: the week's best trade, or the tally once it is worth showing. Small numbers say less than no numbers. */}
           <Highlight
             fallback={
-              rows && stats.launched < TALLY_MIN ? null : (
+              rows && stats.launched < TALLY_MIN ? <Explainer /> : (
               <div className="rounded bg-neutral-50 p-5">
                 <div className="text-sm text-neutral-400">Livestock so far</div>
                 <div className="mt-4 grid grid-cols-3 gap-2">
