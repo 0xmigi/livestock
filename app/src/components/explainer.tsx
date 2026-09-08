@@ -36,6 +36,8 @@ const TICKS = { launch: (LAUNCH_AT * 1000) / TICK_MS, expiry: (EXPIRY_AT * 1000)
 
 /** Same $100 into each, so the two lines are directly comparable. */
 const STAKE = 100;
+/** The creator's fee on every buy, as in the program (FEE_BPS = 100). */
+const FEE = 0.01;
 
 /**
  * The y-range is pinned (see the "range" series) so the overlay can map
@@ -135,7 +137,7 @@ function step(random: () => number, value: number, drift: number, noise: number)
 export function Explainer({ className = "" }: { className?: string }) {
   const { theme } = useTheme();
   const [phase, setPhase] = useState<Phase>("before");
-  /** At expiry: the narrative's last value over the stock's, same $100 in each. */
+  /** At expiry: an early buyer's stock over a straight buy's, from the vault share. See the tick loop. */
   const [multiple, setMultiple] = useState<number | null>(null);
   const [stock, setStock] = useState<LivelinePoint[]>([]);
   const [narrative, setNarrative] = useState<LivelinePoint[]>([]);
@@ -164,6 +166,8 @@ export function Explainer({ className = "" }: { className?: string }) {
     let stockValue = STAKE;
     let anchor = STAKE;
     let narrativeValue = STAKE;
+    let ratioSum = 0;
+    let ratioCount = 0;
     let lastPhase: Phase = "before";
     let random = rng(SEED);
 
@@ -212,9 +216,18 @@ export function Explainer({ className = "" }: { className?: string }) {
           narrativeValue = step(random, narrativeValue, drift, 0.014);
         }
         setNarrative((d) => [...d, { time: now, value: narrativeValue }]);
+        ratioSum += narrativeValue / stockValue;
+        ratioCount += 1;
       } else if (p === "after" && lastPhase === "live") {
-        // What the same $100 got: the narrative's last value over the stock's.
-        setMultiple(narrativeValue / stockValue);
+        // What an early buyer actually ends up with, in stock, next to a
+        // straight buy of the stock at the same moment. At expiry every token
+        // redeems for its share of the vault, and the vault holds what all
+        // buyers paid in (less the 1% fee), so a token is worth the average
+        // price paid, not the last price. With buying spread evenly over the
+        // token's life that average is the mean of its price in stock terms.
+        // No sells are modelled; sells would leave their 10% exit tax behind
+        // and raise this slightly.
+        setMultiple((1 - FEE) * (ratioSum / ratioCount));
       }
       // After expiry nothing more happens to the narrative. liveline keeps
       // drawing it flat out to the live tip; the overlay covers that stretch
@@ -292,8 +305,9 @@ export function Explainer({ className = "" }: { className?: string }) {
       Someone launches <span className="text-neutral-900">{NARRATIVE}</span> on {STOCK}, two-week expiry.
     </>,
     <>
-      It redeems for <span className="text-neutral-900">{multiple ? `${multiple.toFixed(1)}×` : "more"}</span> the{" "}
-      {STOCK} a straight buy got.
+      An early buyer ends up with{" "}
+      <span className="text-neutral-900">{multiple ? `${multiple.toFixed(1)}×` : "more"}</span> the {STOCK} a
+      straight buy got.
     </>,
   ];
   const beat = phase === "before" ? 0 : phase === "live" ? (t < LAUNCH_AT + LAUNCH_BEAT_SECS ? 1 : 2) : 3;

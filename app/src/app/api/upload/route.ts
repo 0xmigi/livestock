@@ -6,13 +6,12 @@
  * parse for exactly those names — `image` is what renders the token's picture,
  * and anything unrecognised is ignored rather than merged.
  *
- * Storage is Vercel Blob: plain HTTPS URLs, which is what the metadata URI on
- * a real launchpad token points at. IPFS is not required, and a gateway that
- * goes down would take every token's image with it.
- *
- * Without a Blob token — local development, devnet — files land in
- * `app/.uploads/` and are served back by /api/uploads, so creating works
- * anywhere the app runs. Those URIs only resolve while this server is up.
+ * Storage is the file store beside the keeper on Railway (see
+ * src/lib/server/storage.ts): plain HTTPS URLs, which is what the metadata
+ * URI on a real launchpad token points at. Without it (local development)
+ * files land in `app/.uploads/` and are served back by /api/uploads, so
+ * creating works anywhere the app runs. Those URIs only resolve while this
+ * server is up.
  */
 
 import { NextResponse } from "next/server";

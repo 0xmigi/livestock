@@ -7,7 +7,8 @@
     "seed": "tsx src/seed.ts",
     "swap-buy": "tsx src/swap-buy.ts",
     "keeper": "tsx src/keeper.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "files": "tsx src/files.ts"
   },
   "dependencies": {
     "@nm/client": "workspace:*",

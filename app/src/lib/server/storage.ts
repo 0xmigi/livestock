@@ -1,17 +1,23 @@
 /**
  * Where narrative images and metadata JSON live.
  *
- * Vercel Blob when a token is set: plain HTTPS URLs, which is what the
- * metadata URI on a real launchpad token points at. Otherwise `app/.uploads/`
- * served by /api/uploads, so the app works locally and on devnet. Metadata is
- * written in place on edit, so a mint's URI never has to change.
+ * In production, the file store that runs alongside the keeper on Railway
+ * (scripts/src/files.ts): `FILES_URL` is its public domain and
+ * `FILES_SECRET` the shared secret it accepts uploads with. Files land on a
+ * Railway volume and are served straight back as plain HTTPS URLs, which is
+ * what the metadata URI on a real launchpad token points at.
+ *
+ * Without those two variables (local development) files land in
+ * `app/.uploads/` and are served by /api/uploads. Metadata is written in
+ * place on edit, so a mint's URI never has to change.
  */
 
 import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { put } from "@vercel/blob";
+const FILES_URL = process.env.FILES_URL?.replace(/\/+$/, "");
+const FILES_SECRET = process.env.FILES_SECRET;
 
 /** Local uploads; gitignored. */
 export const LOCAL_UPLOADS = path.join(process.cwd(), ".uploads");
@@ -67,24 +73,35 @@ export async function store(
   body: Blob | string,
   contentType: string,
 ): Promise<string> {
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    // `addRandomSuffix` keeps two narratives with the same name from
-    // overwriting each other's files.
-    const uploaded = await put(key, body, { access: "public", addRandomSuffix: true, contentType });
-    return uploaded.url;
+  // The random suffix keeps two narratives with the same name from
+  // overwriting each other's files.
+  const ext = path.extname(key);
+  const file = `${path.basename(key, ext)}-${randomBytes(4).toString("hex")}${ext}`;
+
+  if (FILES_URL && FILES_SECRET) {
+    await putFile(file, body, contentType);
+    return `${FILES_URL}/files/${file}`;
   }
   if (process.env.VERCEL) {
     // The function's disk is read-only, and an ENOENT from mkdir says
-    // nothing about the actual problem: the store is not connected.
-    throw new Error(
-      "Image storage is not set up: connect a Vercel Blob store so BLOB_READ_WRITE_TOKEN is set.",
-    );
+    // nothing about the actual problem: the file store is not configured.
+    throw new Error("Image storage is not set up: set FILES_URL and FILES_SECRET to the Railway file store.");
   }
-  const ext = path.extname(key);
-  const file = `${path.basename(key, ext)}-${randomBytes(4).toString("hex")}${ext}`;
   await mkdir(LOCAL_UPLOADS, { recursive: true });
   await writeFile(path.join(LOCAL_UPLOADS, file), await toBytes(body));
   return localUrl(request, file);
+}
+
+/** One PUT to the file store. It answers 200 or explains why not. */
+async function putFile(file: string, body: Blob | string, contentType: string): Promise<void> {
+  const response = await fetch(`${FILES_URL}/files/${file}`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${FILES_SECRET}`, "content-type": contentType },
+    body,
+  });
+  if (!response.ok) {
+    throw new Error(`The file store refused the upload (${response.status}): ${await response.text()}`);
+  }
 }
 
 /**
@@ -102,16 +119,10 @@ export async function overwrite(url: string, body: Blob | string, contentType: s
     return;
   }
 
-  if (process.env.BLOB_READ_WRITE_TOKEN && parsed.hostname.endsWith(".blob.vercel-storage.com")) {
-    const pathname = decodeURIComponent(parsed.pathname.slice(1));
-    await put(pathname, body, {
-      access: "public",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType,
-      // The CDN would otherwise hold an edit back for a while.
-      cacheControlMaxAge: 60,
-    });
+  if (FILES_URL && FILES_SECRET && url.startsWith(`${FILES_URL}/files/`)) {
+    const file = url.slice(`${FILES_URL}/files/`.length);
+    if (!LOCAL_NAME.test(file)) throw new Error("Not a file this app serves.");
+    await putFile(file, body, contentType);
     return;
   }
 

@@ -22,7 +22,7 @@ import {
   TimeBar,
 } from "@/components/ui";
 import { formatUsd, formatUsdAuto, type StockInfo } from "@/lib/config";
-import { backingOf, compact, fdvOf, formatAgo, isLivePhase, tokenPriceOf, usdOf } from "@/lib/figures";
+import { backingOf, compact, fdvOf, isLivePhase, tokenPriceOf, usdOf } from "@/lib/figures";
 import { usePriceChange } from "@/lib/change";
 import { useStockMeta } from "@/lib/logos";
 import {
@@ -78,14 +78,6 @@ export default function Markets() {
     }
     return { launched: rows?.length ?? 0, live: live.length, locked, fdv, soon };
   }, [rows, live, prices, now]);
-
-  const features = useMemo(() => {
-    if (live.length === 0) return null;
-    const byFdv = [...live].sort((a, b) => fdvOf(b, prices) - fdvOf(a, prices));
-    const byExpiry = [...live].sort((a, b) => Number(a.expiryTs - b.expiryTs));
-    const byNew = [...live].sort((a, b) => Number(b.createdTs - a.createdTs));
-    return { newest: byNew[0], top: byFdv[0], soonest: byExpiry[0] };
-  }, [live, prices]);
 
   const list = useMemo(() => {
     if (!rows) return [];
@@ -154,15 +146,6 @@ export default function Markets() {
         ) : error ? (
           <Notice kind="error">Could not reach the network: {error}</Notice>
         ) : null}
-
-        {/* Three worth a look right now; nothing at all until something is live */}
-        {rows !== null && live.length === 0 ? null : (
-        <div className="scrollbar-hide -mx-5 flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0">
-          <Feature label="Just launched" row={features?.newest ?? null} now={now} prices={prices} kind="new" loading={rows === null} />
-          <Feature label="Top FDV" row={features?.top ?? null} now={now} prices={prices} kind="fdv" loading={rows === null} />
-          <Feature label="Ending soonest" row={features?.soonest ?? null} now={now} prices={prices} kind="time" loading={rows === null} />
-        </div>
-        )}
 
         {/* The list */}
         <section className="space-y-4">
@@ -289,69 +272,6 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="mono text-xl font-semibold leading-none text-neutral-900 sm:text-2xl">{value}</div>
       <div className="mt-1.5 text-[11px] text-neutral-400">{label}</div>
     </div>
-  );
-}
-
-function Feature({
-  label,
-  row: n,
-  now,
-  prices,
-  kind,
-  loading,
-}: {
-  label: string;
-  row: NarrativeRow | null;
-  now: number;
-  prices: Record<string, number>;
-  kind: "new" | "fdv" | "time";
-  loading: boolean;
-}) {
-  const frame = "w-[78vw] shrink-0 snap-start rounded bg-neutral-50 p-4 sm:w-auto";
-  if (loading) {
-    return (
-      <div className={frame} aria-hidden>
-        <div className="text-xs text-neutral-400">{label}</div>
-        <div className="mt-3 h-12 animate-pulse rounded bg-neutral-100" />
-      </div>
-    );
-  }
-  if (!n) {
-    return (
-      <div className={frame}>
-        <div className="text-xs text-neutral-400">{label}</div>
-        <div className="mt-3 text-sm text-neutral-400">Nothing live yet.</div>
-      </div>
-    );
-  }
-  const remaining = secondsRemaining(n, now);
-  const phase = phaseOf(n.status, remaining);
-  const figure =
-    kind === "time"
-      ? formatCountdown(remaining)
-      : kind === "new"
-        ? formatAgo(now - Number(n.createdTs))
-        : compact(fdvOf(n, prices));
-  const caption =
-    kind === "time"
-      ? `${compact(fdvOf(n, prices))} FDV`
-      : kind === "new"
-        ? `${compact(fdvOf(n, prices))} FDV`
-        : `${formatUsdAuto(tokenPriceOf(n, prices))} per token`;
-
-  return (
-    <Link href={`/n/${n.address}`} className={`${frame} lift block`}>
-      <div className="text-xs text-neutral-400">{label}</div>
-      <div className="mt-3 flex items-center gap-3">
-        <Thumb src={n.meta?.image} name={n.name} size={40} shape="square" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-semibold text-neutral-900">{n.name}</div>
-          <div className="mono truncate text-xs text-neutral-400">{caption}</div>
-        </div>
-        <div className="mono shrink-0 text-base font-semibold text-neutral-900">{figure}</div>
-      </div>
-      <TimeBar createdTs={n.createdTs} expiryTs={n.expiryTs} now={now} phase={phase} className="mt-4" />
-    </Link>
   );
 }
 

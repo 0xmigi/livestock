@@ -1,6 +1,7 @@
 /**
  * Runs the keeper in a loop: expires narratives whose date has passed and
- * pays every holder out in the stock. Fees come from KEEPER_KEYPAIR (a JSON
+ * pays every holder out in the stock. Also serves the file store (see
+ * files.ts) when FILES_SECRET is set, so one Railway service does both. Fees come from KEEPER_KEYPAIR (a JSON
  * byte array, for hosts like Railway), else the file at KEYPAIR, else the
  * Solana CLI keypair.
  *
@@ -12,6 +13,8 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { startFileServer } from "./files";
 
 import {
   batches,
@@ -98,6 +101,8 @@ async function pass(payer: KeyPairSigner): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // The file store rides along in this process when FILES_SECRET is set.
+  startFileServer();
   const payer = await loadPayer();
   console.log(`keeper ${payer.address} on ${RPC_URL}`);
   if (process.env.ONCE) {
