@@ -21,7 +21,7 @@ import { Footer } from "./footer";
 import { Wash } from "./wash";
 import { AccountChip, AccountMenu, isActivePath, useOwner } from "./wallet";
 
-export const CONTAINER = "mx-auto w-full max-w-5xl px-5 sm:px-8";
+export const CONTAINER = "mx-auto w-full max-w-[1280px] px-5 sm:px-8";
 
 export function Shell({
   children,

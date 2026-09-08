@@ -254,7 +254,7 @@ body {
   scrollbar-width: none;
 }
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;
+  display: none !important;
 }
 
 input[type="number"]::-webkit-outer-spin-button,
@@ -376,4 +376,19 @@ input[type="number"] {
   .wash > span {
     animation: none;
   }
+}
+
+/* The hero explainer's chart. liveline adds series toggle chips above the
+   canvas whenever there are two lines; the explainer has nothing to toggle. */
+.explainer-chart > div:has(button) {
+  display: none !important;
+}
+
+/* Each new beat of the explainer's story fades in; the old one is simply gone. */
+.explainer-beat {
+  animation: beat-in 0.4s ease-out;
+}
+@keyframes beat-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
 }

@@ -113,14 +113,15 @@ export default function Markets() {
     <Shell>
       <div className="space-y-10">
         {/* Hero: the pitch, and the numbers so far */}
-        <section className="grid gap-8 pb-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
-          <div className="max-w-xl">
-            <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl">
-              Buy live narratives.
-              <br />
-              <span className="text-neutral-400">Expire into real stocks.</span>
-            </h1>
-            <Link href="/create" className="mt-7 inline-block">
+        <section className="grid pb-6 lg:grid-cols-3 lg:gap-x-3">
+          {/* Headline on its own row; the button and the chart share the next, so the chart hangs from the button's line. */}
+          <h1 className="max-w-2xl text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl lg:col-span-3 lg:row-start-1">
+            Buy live narratives.
+            <br />
+            <span className="text-neutral-400">Expire into real stocks.</span>
+          </h1>
+          <div className="mt-7 lg:col-start-1 lg:row-start-2 lg:self-start">
+            <Link href="/create" className="inline-block">
               <Button variant="primary" size="lg" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" strokeWidth={2.5} />
                 Create a narrative
@@ -129,20 +130,23 @@ export default function Markets() {
           </div>
 
           {/* Proof over pitch: the week's best trade, or the tally once it is worth showing. Small numbers say less than no numbers. */}
-          <Highlight
-            fallback={
-              rows && stats.launched < TALLY_MIN ? <Explainer /> : (
-              <div className="rounded bg-neutral-50 p-5">
-                <div className="text-sm text-neutral-400">Livestock so far</div>
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  <Stat label="launched" value={rows ? String(stats.launched) : "—"} />
-                  <Stat label="combined FDV" value={rows ? compact(stats.fdv) : "—"} />
-                  <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
+          {/* Two thirds wide: the width of two of the three cards below, so the edges line up. */}
+          <div className="mt-7 min-w-0 overflow-hidden lg:col-span-2 lg:col-start-2 lg:row-start-2 lg:self-start">
+            <Highlight
+              fallback={
+                rows && stats.launched < TALLY_MIN ? <Explainer /> : (
+                <div className="rounded bg-neutral-50 p-5">
+                  <div className="text-sm text-neutral-400">Livestock so far</div>
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <Stat label="launched" value={rows ? String(stats.launched) : "—"} />
+                    <Stat label="combined FDV" value={rows ? compact(stats.fdv) : "—"} />
+                    <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
+                  </div>
                 </div>
-              </div>
-              )
-            }
-          />
+                )
+              }
+            />
+          </div>
         </section>
 
         {stocksLoaded && stocks.length === 0 ? (
