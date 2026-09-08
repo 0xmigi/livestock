@@ -99,8 +99,8 @@ export default function Markets() {
             <span className="text-neutral-400">that expire into stocks</span>
           </h1>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-neutral-400 lg:col-span-3 lg:row-start-2">
-            A token for a story about a stock: every buy fills a vault of that stock, and on the date every token
-            becomes it.
+            Turn the attention around a stock into a market. Each narrative is a short-lived token for one story
+            about the company: every buy fills a vault of the stock, and on the date every token becomes it.
           </p>
           <div className="mt-7 lg:col-start-1 lg:row-start-3 lg:self-start">
             <Link href="/create" className="inline-block">
