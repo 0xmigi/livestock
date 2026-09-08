@@ -50,6 +50,8 @@ function fromListing(l: StockListing): StockInfo | null {
       issuer: l.issuer,
       tier: l.tier,
       liquidityUsd: l.liquidityUsd,
+      marketCapUsd: l.marketCapUsd,
+      holders: l.holders,
       priceUsd: l.priceUsd,
       change24hPercent: l.change24hPercent,
     };

@@ -118,6 +118,26 @@ export function Pig({ x, y, tilt, knock = false }: AnimalProps) {
 /** The box the mark is composed in. Ears and horns poke past it, so the svg is left to overflow. */
 export const MARK_VIEWBOX = "-5 -5 62 62";
 
+/**
+ * The mark: a bull's head in an 8×8 pixel grid, lit from the top-left.
+ * Horns in the top corners, a block of a face, two empty cells for nostrils.
+ * Three tones of the brand ochre from the --mark-* variables, tinted per
+ * theme rather than faded, so the light cells still read on a dark ground. Picked from a sheet of options on
+ * 2026-09-08 ("S2", palette "C4"). The cow and pig above are kept for the /logo
+ * workbench and older pages.
+ */
+const MARK_ROWS = [
+  "X......x",
+  "X......x",
+  ".XXXXXx.",
+  ".XXXXxx.",
+  ".XXXxxo.",
+  "..XXxo..",
+  "..X..o..",
+  "..xxoo..",
+];
+const MARK_TONE: Record<string, string> = { X: "var(--mark-1)", x: "var(--mark-2)", o: "var(--mark-3)" };
+
 export function Logo({
   size = 28,
   className = "",
@@ -125,18 +145,32 @@ export function Logo({
   size?: number;
   className?: string;
 }) {
+  const cell = 10;
+  const inset = 0.5;
   return (
     <svg
       width={size}
       height={size}
-      viewBox={MARK_VIEWBOX}
-      overflow="visible"
+      viewBox="0 0 80 80"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden="true"
     >
-      <Pig x={19} y={1} tilt={8} />
-      <Cow x={0} y={17} tilt={-6} knock />
+      {MARK_ROWS.flatMap((row, y) =>
+        [...row].map((c, x) =>
+          c === "." ? null : (
+            <rect
+              key={`${x}-${y}`}
+              x={x * cell + inset}
+              y={y * cell + inset}
+              width={cell - inset * 2}
+              height={cell - inset * 2}
+              rx={1}
+              fill={MARK_TONE[c]}
+            />
+          ),
+        ),
+      )}
     </svg>
   );
 }
@@ -144,7 +178,7 @@ export function Logo({
 export function Wordmark({ className = "" }: { className?: string }) {
   return (
     <span className={`flex items-center gap-2.5 text-neutral-900 ${className}`}>
-      <Logo className="text-neutral-900" size={30} />
+      <Logo size={26} />
       <span className="text-lg font-semibold tracking-tight">Livestock</span>
     </span>
   );

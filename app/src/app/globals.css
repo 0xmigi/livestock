@@ -33,18 +33,24 @@
   --primary-hover: #ffffff;
   --on-primary: #141414;
 
-  /* Blue: actions and links with no direction. Green: buy and gain.
-     Red: sell and loss. Figures stay in the ink colour. */
-  --accent: #516af6;
-  --accent-hover: #6b80ff;
-  --accent-light: #1f2750;
-  --on-accent: #ffffff;
+  /* Ochre: the brand, used only to highlight (selected, current, progress).
+     Big actions are ink. Green: buy and gain. Red: sell and loss. Figures
+     stay in the ink colour. */
+  --accent: #e0993a;
+  --accent-hover: #ecb96e;
+  --accent-light: #3a2a14;
+  --on-accent: #141414;
+  /* The mark's three tones. Real tints, not transparency, so the lighter
+     cells stay luminous on the dark ground instead of sinking into it. */
+  --mark-1: #e0993a;
+  --mark-2: #edb96c;
+  --mark-3: #f6d9ad;
   --buy: #048f5c;
   --buy-hover: #05a86c;
-  --link: #516af6;
+  --link: #e0993a;
 
   --live: #21c95e;
-  --closing: #516af6;
+  --closing: #e0993a;
   --settled: #7a7a76;
 
   --danger: #ff622e;
@@ -64,7 +70,7 @@
 
   /* Ground texture: a faint dot grid, and two slow colour washes behind it. */
   --dot: rgba(255, 255, 255, 0.06);
-  --wash-a: rgba(81, 106, 246, 0.22);
+  --wash-a: rgba(224, 153, 58, 0.22);
   --wash-b: rgba(33, 201, 94, 0.14);
 }
 
@@ -84,16 +90,19 @@
   --primary-hover: #000000;
   --on-primary: #ffffff;
 
-  --accent: #3b53e0;
-  --accent-hover: #2f45c4;
-  --accent-light: #e8ebfd;
+  --accent: #b8741a;
+  --accent-hover: #a2650f;
+  --accent-light: #f7ead3;
   --on-accent: #ffffff;
+  --mark-1: #b8741a;
+  --mark-2: #d9a24d;
+  --mark-3: #efd3a0;
   --buy: #048f5c;
   --buy-hover: #037a4e;
-  --link: #3b53e0;
+  --link: #b8741a;
 
   --live: #0a9c4f;
-  --closing: #3b53e0;
+  --closing: #b8741a;
   --settled: #7a7a76;
 
   --danger: #d6431a;
@@ -110,7 +119,7 @@
   --press: #f1f1ef;
 
   --dot: rgba(28, 28, 29, 0.07);
-  --wash-a: rgba(59, 83, 224, 0.13);
+  --wash-a: rgba(184, 116, 26, 0.13);
   --wash-b: rgba(10, 156, 79, 0.1);
 }
 
@@ -258,7 +267,7 @@ input[type="number"] {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 1.5px solid var(--n400);
   outline-offset: 2px;
 }
 

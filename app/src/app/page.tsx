@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Plus, Search, Sprout } from "lucide-react";
+import { Plus, Search, Sprout } from "lucide-react";
 import { formatStock, redemptionPerToken, secondsRemaining } from "@nm/client";
 
 import { Highlight } from "@/components/highlight";
@@ -20,7 +20,7 @@ import {
   StockLogo,
   TimeBar,
 } from "@/components/ui";
-import { formatUsd, formatUsdAuto } from "@/lib/config";
+import { formatUsd, formatUsdAuto, type StockInfo } from "@/lib/config";
 import { backingOf, compact, fdvOf, formatAgo, isLivePhase, tokenPriceOf, usdOf } from "@/lib/figures";
 import { usePriceChange } from "@/lib/change";
 import { useStockMeta } from "@/lib/logos";
@@ -35,9 +35,10 @@ import { useStockPrices } from "@/lib/price";
 import { useStocks } from "@/lib/stocks";
 
 type View = "live" | "ended";
-type Sort = "fdv" | "new";
 
 const PAGE = 20;
+/** Launches before the hero's tally is worth showing at all. */
+const TALLY_MIN = 10;
 const WEEK = 7 * 24 * 3600;
 
 export default function Markets() {
@@ -47,13 +48,18 @@ export default function Markets() {
   const { stocks, loaded: stocksLoaded, error: stocksError } = useStocks();
 
   const [view, setView] = useState<View>("live");
-  const [sort, setSort] = useState<Sort>("fdv");
-  const [stockFilter, setStockFilter] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
 
   // A new filter starts the list from the top again.
-  useEffect(() => setLimit(PAGE), [view, sort, stockFilter, query]);
+  useEffect(() => setLimit(PAGE), [view, query]);
+
+  // The search covers the underlying too, so "tesla" finds every TSLAx narrative.
+  const stockNames = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const s of stocks) out.set(s.mint, `${s.symbol} ${s.ticker} ${s.name}`.toLowerCase());
+    return out;
+  }, [stocks]);
 
   const live = useMemo(
     () => (rows ?? []).filter((n) => isLivePhase(phaseOf(n.status, secondsRemaining(n, now)))),
@@ -86,14 +92,18 @@ export default function Markets() {
     const wanted = rows.filter((n) => {
       const isLive = isLivePhase(phaseOf(n.status, secondsRemaining(n, now)));
       if (view === "live" ? !isLive : isLive) return false;
-      if (stockFilter && n.stockMint !== stockFilter) return false;
-      if (q && !n.name.toLowerCase().includes(q) && !n.symbol.toLowerCase().includes(q)) return false;
+      if (
+        q &&
+        !n.name.toLowerCase().includes(q) &&
+        !n.symbol.toLowerCase().includes(q) &&
+        !(stockNames.get(n.stockMint) ?? "").includes(q)
+      ) {
+        return false;
+      }
       return true;
     });
-    return wanted.sort((a, b) =>
-      sort === "fdv" ? fdvOf(b, prices) - fdvOf(a, prices) : Number(b.createdTs - a.createdTs),
-    );
-  }, [rows, now, view, sort, stockFilter, query, prices]);
+    return wanted.sort((a, b) => fdvOf(b, prices) - fdvOf(a, prices));
+  }, [rows, now, view, query, prices, stockNames]);
 
   const shown = list.slice(0, limit);
   const left = list.length - shown.length;
@@ -105,21 +115,22 @@ export default function Markets() {
         <section className="grid gap-8 pb-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
           <div className="max-w-xl">
             <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl">
-              Buy the narrative.
+              Buy live narratives
               <br />
-              <span className="text-neutral-400">When it expires, you get the stock.</span>
+              <span className="text-neutral-400">that expire into real stocks.</span>
             </h1>
             <Link href="/create" className="mt-7 inline-block">
-              <Button variant="accent" size="lg" className="flex items-center gap-2">
+              <Button variant="primary" size="lg" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" strokeWidth={2.5} />
                 Create a narrative
               </Button>
             </Link>
           </div>
 
-          {/* Proof over pitch: the week's best trade, or the tally until there is one. */}
+          {/* Proof over pitch: the week's best trade, or the tally once it is worth showing. Small numbers say less than no numbers. */}
           <Highlight
             fallback={
+              rows && stats.launched < TALLY_MIN ? null : (
               <div className="rounded bg-neutral-50 p-5">
                 <div className="text-sm text-neutral-400">Livestock so far</div>
                 <div className="mt-4 grid grid-cols-3 gap-2">
@@ -128,6 +139,7 @@ export default function Markets() {
                   <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
                 </div>
               </div>
+              )
             }
           />
         </section>
@@ -138,16 +150,18 @@ export default function Markets() {
           <Notice kind="error">Could not reach the network: {error}</Notice>
         ) : null}
 
-        {/* Three worth a look right now */}
+        {/* Three worth a look right now; nothing at all until something is live */}
+        {rows !== null && live.length === 0 ? null : (
         <div className="scrollbar-hide -mx-5 flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0">
           <Feature label="Just launched" row={features?.newest ?? null} now={now} prices={prices} kind="new" loading={rows === null} />
           <Feature label="Top FDV" row={features?.top ?? null} now={now} prices={prices} kind="fdv" loading={rows === null} />
           <Feature label="Ending soonest" row={features?.soonest ?? null} now={now} prices={prices} kind="time" loading={rows === null} />
         </div>
+        )}
 
         {/* The list */}
         <section className="space-y-4">
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-wrap items-center gap-2">
             <Segmented
               size="sm"
               value={view}
@@ -157,22 +171,12 @@ export default function Markets() {
                 { value: "ended", label: "Ended" },
               ]}
             />
-            <Segmented
-              size="sm"
-              value={sort}
-              onChange={setSort}
-              options={[
-                { value: "fdv", label: "Top FDV" },
-                { value: "new", label: "Newest" },
-              ]}
-            />
-            <StockMenu value={stockFilter} onChange={setStockFilter} rows={rows ?? []} />
             <label className="relative ml-auto w-full sm:w-56">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search"
+                placeholder="Search narratives or stocks"
                 className="h-8 w-full rounded border border-neutral-200 bg-neutral-50 pl-9 pr-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400"
                 aria-label="Search narratives"
               />
@@ -181,22 +185,13 @@ export default function Markets() {
 
           {rows === null ? (
             <Skeleton />
+          ) : list.length === 0 && view === "live" && !query ? (
+            <Launchpad stocks={stocks} />
           ) : list.length === 0 ? (
             <EmptyState
               icon={<Sprout className="h-10 w-10" strokeWidth={1.5} />}
               title={query ? "Nothing matches that" : view === "ended" ? "Nothing has ended yet" : "No live narratives"}
-              body={
-                view === "live" && !query
-                  ? "Launch the first one and set the date it converts."
-                  : "Narratives show up here as their dates approach and pass."
-              }
-              action={
-                view === "live" && !query ? (
-                  <Link href="/create">
-                    <Button variant="accent">Create a narrative</Button>
-                  </Link>
-                ) : null
-              }
+              body="Narratives show up here as their dates approach and pass."
             />
           ) : (
             <>
@@ -220,32 +215,66 @@ export default function Markets() {
           )}
         </section>
 
-        {/* How it works, for whoever scrolled this far */}
-        <section id="how-it-works" className="scroll-mt-8 rounded bg-neutral-50 p-2">
-          <div className="mono px-3 pb-2.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
-            How it works
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <Step n="00" title="Pick a narrative" body="A story about a company, tied to its stock, with an end date. Find one or make one." />
-            <Step n="01" title="Buy with SOL" body="Your SOL becomes the stock and goes in the vault. You get tokens. Price follows supply: buys push it up, sells push it down." />
-            <Step n="02" title="Sell or hold" body="Sell any time before the date. A 10% exit tax stays in the vault for whoever holds on." />
-            <Step n="03" title="It becomes the stock" body="On the date, the vault is split across every token and sent to holders. Nothing to claim." />
-          </div>
-        </section>
       </div>
     </Shell>
   );
 }
 
-function Step({ n, title, body }: { n: string; title: string; body: string }) {
+/** How many stocks the empty market shows as launch candidates. */
+const LAUNCHPAD_STOCKS = 8;
+
+/**
+ * The market with nothing in it: one honest line, then the tokenized stocks
+ * with the deepest markets, each a click from launching on it. Real prices,
+ * not fake launches.
+ */
+function Launchpad({ stocks }: { stocks: StockInfo[] }) {
+  const candidates = stocks.filter((s) => s.available).slice(0, LAUNCHPAD_STOCKS);
   return (
-    <div className="rounded bg-neutral-100 p-4">
-      <div className="flex items-baseline gap-2">
-        <span className="mono text-xs font-semibold text-accent">{n}</span>
-        <span className="text-[15px] font-semibold text-neutral-900">{title}</span>
+    <div className="rounded bg-neutral-50 p-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-3 pb-3 pt-2">
+        <span className="text-sm text-neutral-900">
+          Nothing live yet.{" "}
+          <span className="text-neutral-400">Pick a stock to launch the first narrative on it.</span>
+        </span>
+        <Link href="/how-it-works" className="text-xs text-neutral-400 underline underline-offset-2 hover:text-neutral-900">
+          How it works
+        </Link>
       </div>
-      <p className="mt-2.5 text-sm leading-relaxed text-neutral-400">{body}</p>
+      {candidates.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {candidates.map((s) => (
+            <LaunchStock key={s.mint} stock={s} />
+          ))}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function LaunchStock({ stock }: { stock: StockInfo }) {
+  const price = stock.priceUsd ?? stock.fallbackPriceUsd;
+  const change = stock.change24hPercent;
+  return (
+    <Link
+      href={`/create?stock=${encodeURIComponent(stock.symbol)}`}
+      className="lift flex items-center gap-3 rounded bg-neutral-100 p-3"
+    >
+      <StockLogo stock={stock} size={32} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold text-neutral-900">{stock.name}</span>
+        <span className="mono block truncate text-xs text-neutral-400">{stock.symbol}</span>
+      </span>
+      <span className="mono shrink-0 text-right text-xs">
+        <span className="block text-neutral-900">{price > 0 ? formatUsd(price) : "—"}</span>
+        {change !== undefined ? (
+          <span className={`block ${change >= 0 ? "text-success" : "text-danger"}`}>
+            {change >= 0 ? "+" : ""}
+            {change.toFixed(1)}%
+          </span>
+        ) : null}
+      </span>
+    </Link>
   );
 }
 
@@ -318,86 +347,6 @@ function Feature({
       </div>
       <TimeBar createdTs={n.createdTs} expiryTs={n.expiryTs} now={now} phase={phase} className="mt-4" />
     </Link>
-  );
-}
-
-/**
- * Which stock, as a dropdown: only the stocks that have a narrative, so the
- * menu is a filter and not the whole catalogue. Logos in the menu, one line
- * in the toolbar.
- */
-function StockMenu({
-  value,
-  onChange,
-  rows,
-}: {
-  value: string | null;
-  onChange: (mint: string | null) => void;
-  rows: NarrativeRow[];
-}) {
-  const [open, setOpen] = useState(false);
-  const meta = useStockMeta();
-  const { stocks } = useStocks();
-  const options = useMemo(() => {
-    const used = new Set(rows.map((n) => n.stockMint as string));
-    return stocks.filter((s) => used.has(s.mint));
-  }, [stocks, rows]);
-  const current = stocks.find((s) => s.mint === value) ?? null;
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        onBlur={() => setTimeout(() => setOpen(false), 120)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="flex h-7 items-center gap-1.5 rounded px-2.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-50 hover:text-neutral-900"
-      >
-        {current ? <StockLogo stock={current} size={16} /> : <span className="text-neutral-400">Underlying</span>}
-        {current ? <span className="mono">{current.symbol}</span> : "All"}
-        <ChevronDown className="h-3.5 w-3.5 text-neutral-400" />
-      </button>
-      {open ? (
-        <ul role="listbox" className="absolute left-0 z-20 mt-1 max-h-80 w-56 overflow-auto rounded bg-neutral-100 py-1 shadow-xl shadow-black/30">
-          <li>
-            <button
-              type="button"
-              role="option"
-              aria-selected={value === null}
-              onMouseDown={() => {
-                onChange(null);
-                setOpen(false);
-              }}
-              className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-neutral-900 hover:bg-neutral-200"
-            >
-              All
-              {value === null ? <Check className="h-3.5 w-3.5" /> : null}
-            </button>
-          </li>
-          {options.map((s) => (
-            <li key={s.mint}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={value === s.mint}
-                onMouseDown={() => {
-                  onChange(value === s.mint ? null : s.mint);
-                  setOpen(false);
-                }}
-                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-neutral-200"
-              >
-                <StockLogo stock={s} size={18} />
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-neutral-900">{meta[s.mint]?.name ?? s.symbol}</span>
-                  <span className="mono ml-1.5 text-xs text-neutral-400">{s.symbol}</span>
-                </span>
-                {value === s.mint ? <Check className="h-3.5 w-3.5 text-neutral-900" /> : null}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
   );
 }
 

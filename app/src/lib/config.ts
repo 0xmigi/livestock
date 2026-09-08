@@ -9,7 +9,7 @@ export const APP_NAME = "Livestock";
 
 /** The bio is a hard cap, the way a profile bio is. */
 export const BIO_MAX_CHARS = 160;
-export const TAGLINE = "Buy the narrative. When it expires, you get the stock.";
+export const TAGLINE = "Buy live narratives that expire into real stocks.";
 
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
@@ -79,6 +79,9 @@ export type StockInfo = {
   /** Redeemability as the Tokens API reports it, e.g. "cash_redeemable". */
   tier?: string;
   liquidityUsd?: number;
+  /** Market cap of the token on Solana, not of the company. */
+  marketCapUsd?: number;
+  holders?: number;
   /** Live USD price from the Tokens API, when it has one. */
   priceUsd?: number;
   change24hPercent?: number;
@@ -210,6 +213,17 @@ export function formatUsdAuto(value: number): string {
   if (value < 0.01) return formatUsd(value, Math.min(10, 2 - Math.floor(Math.log10(value))));
   if (value < 1) return formatUsd(value, 4);
   return formatUsd(value, 2);
+}
+
+/** Big dollar figures at a glance: $3.7M, $68M, $1.2B. */
+export function formatUsdCompact(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: value < 10_000_000 ? 1 : 0,
+  });
 }
 
 export function explorerUrl(addr: string): string {

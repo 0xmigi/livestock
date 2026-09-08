@@ -73,6 +73,13 @@ export async function store(
     const uploaded = await put(key, body, { access: "public", addRandomSuffix: true, contentType });
     return uploaded.url;
   }
+  if (process.env.VERCEL) {
+    // The function's disk is read-only, and an ENOENT from mkdir says
+    // nothing about the actual problem: the store is not connected.
+    throw new Error(
+      "Image storage is not set up: connect a Vercel Blob store so BLOB_READ_WRITE_TOKEN is set.",
+    );
+  }
   const ext = path.extname(key);
   const file = `${path.basename(key, ext)}-${randomBytes(4).toString("hex")}${ext}`;
   await mkdir(LOCAL_UPLOADS, { recursive: true });

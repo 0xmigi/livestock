@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
-import { ChevronLeft, ChevronRight, ImagePlus, Search } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ImagePlus, Search } from "lucide-react";
 import {
   findNarrative,
   findVault,
@@ -42,6 +42,7 @@ import {
   BIO_MAX_CHARS,
   formatUsd,
   formatUsdAuto,
+  formatUsdCompact,
   rpc,
   SOLANA_CHAIN,
   type StockInfo,
@@ -68,9 +69,8 @@ const DURATIONS = [
   { label: "2 weeks", secs: 14 * 24 * 3600 },
 ];
 
-/** How many stocks the picker shows before a search narrows it. */
-const PICKER_DEFAULT = 12;
-const PICKER_MATCHES = 24;
+/** The picker scrolls through the whole catalogue; a search narrows it. */
+const PICKER_MATCHES = 60;
 
 /** 10% is the dial that decides whether people hold to expiry. */
 const SELL_TAX_BPS = 1_000;
@@ -112,25 +112,33 @@ export default function Create() {
 
   const [step, setStep] = useState<Step>("stock");
   const { stocks, loaded: stocksLoaded, error: stocksError } = useStocks();
-  const [stock, setStock] = useState<StockInfo | null>(null);
+  const [picked, setStock] = useState<StockInfo | null>(null);
   const [stockQuery, setStockQuery] = useState("");
+  // The pick is remembered by mint and read back from the live list, so the
+  // pins that seed the list before the registry answers never go stale.
+  const stock = useMemo(
+    () => (picked ? (stocks.find((s) => s.mint === picked.mint) ?? picked) : null),
+    [stocks, picked],
+  );
   const { price, isLive } = useStockPrice(stock?.mint);
 
-  // The first usable stock is picked for you once the registry is in.
+  // `?stock=TSLAx` from a link picks that one; otherwise the first usable
+  // stock is picked for you once the registry is in.
   useEffect(() => {
-    if (stock) return;
-    const first = stocks.find((s) => s.available);
+    if (picked) return;
+    const wanted = new URLSearchParams(window.location.search).get("stock")?.toUpperCase();
+    const asked = wanted ? stocks.find((s) => s.available && s.symbol.toUpperCase() === wanted) : null;
+    const first = asked ?? stocks.find((s) => s.available);
     if (first) setStock(first);
-  }, [stocks, stock]);
+  }, [stocks, picked]);
 
-  // The whole catalogue is searchable; a dozen of the deepest sit up front.
+  // The whole catalogue, deepest first, in a window you scroll. A search
+  // narrows it. Order never changes on a pick: a card that jumps around
+  // reads as a glitch, not a selection.
   const pickerStocks = useMemo(() => {
     const q = stockQuery.trim();
-    if (q) return stocks.filter((s) => matchesStock(s, q)).slice(0, PICKER_MATCHES);
-    const top = stocks.slice(0, PICKER_DEFAULT);
-    if (stock && !top.some((s) => s.mint === stock.mint)) top.unshift(stock);
-    return top;
-  }, [stocks, stockQuery, stock]);
+    return q ? stocks.filter((s) => matchesStock(s, q)).slice(0, PICKER_MATCHES) : stocks;
+  }, [stocks, stockQuery]);
 
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -332,12 +340,12 @@ export default function Create() {
           Continue
         </Button>
       ) : !ready ? null : !authenticated || !owner ? (
-        <Button variant="accent" size="lg" onClick={login}>
+        <Button variant="primary" size="lg" onClick={login}>
           Log in to launch
         </Button>
       ) : (
         <Button
-          variant="accent"
+          variant="primary"
           size="lg"
           onClick={create}
           disabled={busy || !valid}
@@ -412,10 +420,12 @@ export default function Create() {
                 {stocksLoaded ? "Nothing matches." : "Loading the stock list."}
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                {pickerStocks.map((s) => (
-                  <StockOption key={s.mint} stock={s} active={stock?.mint === s.mint} onPick={() => setStock(s)} />
-                ))}
+              <div className="max-h-[27rem] overflow-y-auto rounded">
+                <div className="grid grid-cols-2 gap-3 pb-1 pr-1 sm:grid-cols-3 md:grid-cols-4">
+                  {pickerStocks.map((s) => (
+                    <StockOption key={s.mint} stock={s} active={stock?.mint === s.mint} onPick={() => setStock(s)} />
+                  ))}
+                </div>
               </div>
             )}
             {action}
@@ -432,10 +442,56 @@ export default function Create() {
               </p>
             </header>
 
-            <div className="lg:hidden">{previewCard}</div>
+            {/* The picture first: it is what everyone sees, everywhere. */}
+            <div className="flex items-center gap-5">
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="lift relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-50 text-neutral-400"
+                aria-label={image ? "Change image" : "Choose an image"}
+              >
+                {preview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={preview} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <ImagePlus className="h-7 w-7" strokeWidth={1.5} />
+                )}
+              </button>
+              <div className="min-w-0 space-y-1.5">
+                <div className="text-sm font-medium text-neutral-900">
+                  {image ? <span className="block truncate">{image.name}</span> : "Image"}
+                </div>
+                <div className="flex gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => fileInput.current?.click()}
+                    className="text-link underline underline-offset-2"
+                  >
+                    {image ? "Change" : "Choose an image"}
+                  </button>
+                  {image ? (
+                    <button
+                      type="button"
+                      onClick={() => pickImage(null)}
+                      className="text-neutral-400 underline underline-offset-2"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                <div className="text-xs text-neutral-400">PNG, JPEG, WebP or GIF. Up to 4MB.</div>
+              </div>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
+              />
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
-              <Field label="Name" hint="Up to 32 characters.">
+              <Field label="Name">
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value.slice(0, 32))}
@@ -444,7 +500,7 @@ export default function Create() {
                   autoFocus
                 />
               </Field>
-              <Field label="Ticker" hint="Up to 10.">
+              <Field label="Ticker">
                 <input
                   value={symbol}
                   onChange={(e) => setSymbol(e.target.value.toUpperCase().slice(0, 10))}
@@ -457,11 +513,7 @@ export default function Create() {
             <Field
               label="Bio"
               optional
-              hint={
-                <span className={bio.length >= BIO_MAX_CHARS ? "text-neutral-900" : undefined}>
-                  {bio.length}/{BIO_MAX_CHARS}
-                </span>
-              }
+              hint={bio.length > 0 ? `${bio.length}/${BIO_MAX_CHARS}` : undefined}
             >
               <textarea
                 value={bio}
@@ -473,45 +525,7 @@ export default function Create() {
               />
             </Field>
 
-            <Field label="Image" hint="PNG, JPEG, WebP or GIF up to 4MB. This is what wallets and feeds show.">
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => fileInput.current?.click()}
-                  className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded border border-dashed border-neutral-300 bg-neutral-50 text-neutral-400 transition-colors hover:border-neutral-400"
-                >
-                  {preview ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={preview} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <ImagePlus className="h-6 w-6" strokeWidth={1.5} />
-                  )}
-                </button>
-                <div className="min-w-0 text-xs text-neutral-400">
-                  {image ? (
-                    <>
-                      <div className="truncate text-neutral-900">{image.name}</div>
-                      <button type="button" onClick={() => pickImage(null)} className="mt-1 underline underline-offset-2">
-                        Remove
-                      </button>
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => fileInput.current?.click()} className="underline underline-offset-2">
-                      Choose an image
-                    </button>
-                  )}
-                </div>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  className="hidden"
-                  onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
-                />
-              </div>
-            </Field>
-
-            <Field label="Source" optional hint="An X post, a website or a Telegram link. We work out which.">
+            <Field label="Source" optional>
               <input
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
@@ -544,12 +558,13 @@ export default function Create() {
                     type="button"
                     onClick={() => setDuration(d.secs)}
                     aria-pressed={on}
-                    className={`lift rounded p-4 text-left ${
-                      on ? "bg-accent-light" : "bg-neutral-50"
+                    className={`relative rounded p-4 text-left transition-colors ${
+                      on ? "bg-primary text-on-primary" : "lift bg-neutral-50"
                     }`}
                   >
-                    <div className="display text-lg text-neutral-900">{d.label}</div>
-                    <div className="mono mt-1 text-xs text-neutral-400">{formatDate(when)}</div>
+                    {on ? <Picked /> : null}
+                    <div className={`display text-lg ${on ? "text-on-primary" : "text-neutral-900"}`}>{d.label}</div>
+                    <div className={`mono mt-1 text-xs ${on ? "text-on-primary/60" : "text-neutral-400"}`}>{formatDate(when)}</div>
                   </button>
                 );
               })}
@@ -632,8 +647,14 @@ export default function Create() {
       <aside className="hidden space-y-4 lg:sticky lg:top-6 lg:block">
         {previewCard}
         <div className="rounded bg-neutral-50 p-4">
-          <dl className="space-y-2.5 text-sm">
+          <dl className="space-y-2">
             <Summary label="Converts to">{stock ? stock.symbol : "—"}</Summary>
+            {stock?.marketCapUsd ? (
+              <Summary label="On-chain cap">{formatUsdCompact(stock.marketCapUsd)}</Summary>
+            ) : null}
+            {stock?.liquidityUsd ? (
+              <Summary label="Liquidity">{formatUsdCompact(stock.liquidityUsd)}</Summary>
+            ) : null}
             <Summary label="Converts on">{formatDate(expiryPreview)}</Summary>
             <Summary label="Opening price">{stock && virtualStock > 0n ? formatUsdAuto(toUsd(openingPrice)) : "—"}</Summary>
             <Summary label="Your fee">{(FEE_BPS / 100).toFixed(2)}% on every buy</Summary>
@@ -668,30 +689,50 @@ function StockOption({
       disabled={!stock.available}
       aria-pressed={active}
       title={stock.available ? undefined : "Only on mainnet"}
-      className={`lift flex flex-col items-start gap-3 rounded p-4 text-left ${
-        active ? "bg-accent-light" : "bg-neutral-50"
+      className={`relative flex flex-col items-start gap-3 rounded p-4 text-left transition-colors ${
+        active ? "bg-primary text-on-primary" : "lift bg-neutral-50"
       } disabled:cursor-not-allowed disabled:opacity-40`}
     >
+      {active ? <Picked /> : null}
       <StockLogo stock={stock} size={36} />
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-neutral-900">{stock.name}</span>
-        <span className="mono block truncate text-xs text-neutral-400">
-          {stock.symbol} · {price > 0 ? formatUsd(price) : "—"}
-          {isLive ? "" : " est."}
+      <span className="block w-full min-w-0">
+        {/* Name and ticker share a line when they fit; the ticker wraps under otherwise. */}
+        <span className="flex flex-wrap items-baseline gap-x-1.5 leading-tight">
+          <span className={`min-w-0 truncate text-sm font-semibold ${active ? "text-on-primary" : "text-neutral-900"}`}>
+            {stock.name}
+          </span>
+          <span className={`mono text-[11px] ${active ? "text-on-primary/50" : "text-neutral-400"}`}>{stock.symbol}</span>
+        </span>
+        <span
+          className={`mono mt-1 block text-xs ${active ? "text-on-primary/80" : "text-neutral-600"}`}
+          title={isLive ? undefined : "Estimated"}
+        >
+          {price > 0 ? `${isLive ? "" : "~"}${formatUsd(price)}` : "—"}
         </span>
         {stock.available ? null : (
-          <span className="mt-1 block text-[11px] text-neutral-400">Mainnet only</span>
+          <span className={`mt-1 block text-[11px] ${active ? "text-on-primary/50" : "text-neutral-400"}`}>Mainnet only</span>
         )}
       </span>
     </button>
   );
 }
 
+/** The check in the corner of whatever is picked. Ink fill says it; the ochre badge is the trim. */
+function Picked() {
+  return (
+    <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-on-accent">
+      <Check className="h-3 w-3" strokeWidth={3} />
+    </span>
+  );
+}
+
+/** A stat row: label, a dotted leader, then the value. The dots say "this one varies". */
 function Summary({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-neutral-400">{label}</dt>
-      <dd className="mono text-right text-neutral-900">{children}</dd>
+    <div className="flex items-baseline gap-2 text-xs">
+      <dt className="shrink-0 text-neutral-400">{label}</dt>
+      <span aria-hidden className="mb-[3px] min-w-3 flex-1 border-b border-dotted border-neutral-300" />
+      <dd className="mono shrink-0 text-right text-neutral-900">{children}</dd>
     </div>
   );
 }

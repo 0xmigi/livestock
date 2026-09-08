@@ -6,8 +6,8 @@ import { Wordmark } from "./logo";
 
 /**
  * Page footer. The wordmark and the pitch on the left, three short columns
- * of links on the right, one quiet line underneath. Sits on the ground with
- * no box around it; the space above does the separating.
+ * of links on the right, one quiet line underneath. A single rule on top
+ * marks where the page ends and the footer begins.
  */
 
 const COLUMNS: { title: string; links: { label: string; href: string; external?: boolean }[] }[] = [
@@ -34,13 +34,13 @@ const COLUMNS: { title: string; links: { label: string; href: string; external?:
 
 export function Footer({ className = "" }: { className?: string }) {
   return (
-    <footer className={`relative z-[1] ${className}`}>
+    <footer className={`relative z-[1] border-t border-neutral-200 pt-10 ${className}`}>
       <div className="grid gap-10 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-16">
         <div className="max-w-xs">
           <Link href="/" className="inline-block transition-opacity hover:opacity-80">
             <Wordmark />
           </Link>
-          <p className="mt-3 text-sm leading-relaxed text-neutral-400">{TAGLINE}</p>
+          <p className="mt-2 text-xs leading-relaxed text-neutral-400">{TAGLINE}</p>
         </div>
 
         <nav aria-label="Footer" className="grid grid-cols-2 gap-8 sm:grid-cols-3 sm:gap-14">
@@ -76,9 +76,7 @@ export function Footer({ className = "" }: { className?: string }) {
 
       <div className="mono mt-10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-400">
         <span>© {new Date().getFullYear()} Livestock</span>
-        <span>
-          On Solana{CLUSTER === "mainnet" ? "" : ` · ${CLUSTER}`}
-        </span>
+        <span>Solana{CLUSTER === "mainnet" ? "" : ` · ${CLUSTER}`}</span>
       </div>
     </footer>
   );

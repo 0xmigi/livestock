@@ -39,6 +39,9 @@ export type StockListing = {
   priceUsd?: number;
   change24hPercent?: number;
   liquidityUsd?: number;
+  /** Market cap of the token on Solana, not of the company. */
+  marketCapUsd?: number;
+  holders?: number;
 };
 
 type ApiVariant = {
@@ -50,6 +53,8 @@ type ApiVariant = {
     decimals?: number;
     price?: number;
     liquidity?: number;
+    marketCap?: number;
+    holder?: number;
     priceChange24hPercent?: number;
     logoURI?: string;
   } | null;
@@ -99,6 +104,9 @@ function normalize(asset: ApiAsset): StockListing | null {
     priceUsd: num(asset.stats?.price) ?? num(v.market?.price),
     change24hPercent: num(asset.stats?.priceChange24hPercent) ?? num(v.market?.priceChange24hPercent),
     liquidityUsd: num(asset.stats?.liquidity) ?? num(v.market?.liquidity),
+    // `stats.marketCap` is the company's; the variant's is the token's.
+    marketCapUsd: num(v.market?.marketCap),
+    holders: num(v.market?.holder),
   };
 }
 

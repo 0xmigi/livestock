@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
 import {
   afterBuy,
@@ -110,25 +111,63 @@ function useAction(onDone: () => void) {
   return { run, busy, error, signature };
 }
 
-function Result({
-  error,
-  signature,
-}: {
-  error: string | null;
-  signature: string | null;
-}) {
+/** Errors need reading, so they get their own line. Success lives in the button. */
+function Result({ error }: { error: string | null; signature?: string | null }) {
   if (error) return <Notice kind="error">{error}</Notice>;
-  if (signature) {
+  return null;
+}
+
+/** How long the button wears the confirmation before going back to normal. */
+const CONFIRMED_MS = 4000;
+
+/**
+ * An action button that turns into its own receipt. When the signature
+ * lands, the button shows "Confirmed" and the start of the signature for a
+ * few seconds, then reverts. Nothing else on the panel moves, so a buy does
+ * not shove the layout open and shut.
+ */
+function TxButton({
+  signature,
+  busy,
+  busyLabel = "Confirming…",
+  children,
+  className = "",
+  disabled,
+  ...props
+}: React.ComponentProps<typeof Button> & {
+  signature: string | null;
+  busy: boolean;
+  busyLabel?: string;
+}) {
+  const [shown, setShown] = useState<string | null>(null);
+  useEffect(() => {
+    if (!signature) return;
+    setShown(signature);
+    const timer = setTimeout(() => setShown(null), CONFIRMED_MS);
+    return () => clearTimeout(timer);
+  }, [signature]);
+
+  if (shown && !busy) {
     return (
-      <Notice kind="success">
-        Confirmed{" "}
-        <span className="numeric text-xs opacity-70">
-          {signature.slice(0, 16)}…
+      <Button
+        {...props}
+        disabled={disabled}
+        className={`${className} !bg-success-fill !text-success`}
+        title={shown}
+      >
+        <span className="inline-flex items-center gap-2">
+          <Check className="h-4 w-4" strokeWidth={2.5} />
+          Confirmed
+          <span className="numeric text-xs opacity-60">{shown.slice(0, 8)}…</span>
         </span>
-      </Notice>
+      </Button>
     );
   }
-  return null;
+  return (
+    <Button {...props} disabled={disabled || busy} className={className}>
+      {busy ? busyLabel : children}
+    </Button>
+  );
 }
 
 async function ataFor(
@@ -479,15 +518,17 @@ export function BuyPanel({
             </p>
           ) : null}
 
-          <Button
+          <TxButton
             onClick={buy}
             variant="buy"
-            disabled={busy || tokens === 0n || insufficient || !quote}
+            busy={busy}
+            signature={signature}
+            disabled={tokens === 0n || insufficient || !quote}
             className="w-full"
             size="lg"
           >
-            {busy ? "Confirming…" : "Buy"}
-          </Button>
+            Buy
+          </TxButton>
         </>
       ) : (
         <>
@@ -512,15 +553,17 @@ export function BuyPanel({
             </Line>
           </div>
 
-          <Button
+          <TxButton
             onClick={sell}
             variant="sell"
-            disabled={busy || !sellAll}
+            busy={busy}
+            signature={signature}
+            disabled={!sellAll}
             className="w-full"
             size="lg"
           >
-            {busy ? "Confirming…" : "Sell all"}
-          </Button>
+            Sell all
+          </TxButton>
           <p className="mono text-[11px] text-neutral-400">
             The exit tax stays in the vault for holders who stay.
           </p>
@@ -583,9 +626,17 @@ export function RedeemPanel({
   if (compact) {
     return (
       <div className="space-y-3">
-        <Button onClick={redeem} variant="ghost" disabled={busy} className="w-full" size="sm">
-          {busy ? "Converting…" : "Not seeing it? Convert now"}
-        </Button>
+        <TxButton
+          onClick={redeem}
+          variant="ghost"
+          busy={busy}
+          busyLabel="Converting…"
+          signature={signature}
+          className="w-full"
+          size="sm"
+        >
+          Not seeing it? Convert now
+        </TxButton>
         <Result error={error} signature={signature} />
       </div>
     );
@@ -617,15 +668,16 @@ export function RedeemPanel({
         </div>
       </Panel>
 
-      <Button
+      <TxButton
         onClick={redeem}
-        variant="accent"
-        disabled={busy}
+        variant="primary"
+        busy={busy}
+        signature={signature}
         className="w-full"
         size="lg"
       >
-        {busy ? "Confirming…" : `Convert to ${stock.symbol}`}
-      </Button>
+        Convert to {stock.symbol}
+      </TxButton>
 
       <p className="text-xs leading-relaxed text-neutral-400">
         Burns all your ${narrative.symbol} and sends the stock to your wallet.
