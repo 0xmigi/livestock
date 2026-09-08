@@ -115,8 +115,9 @@ export function Highlight({ fallback }: { fallback: React.ReactNode }) {
   const h = useHighlight();
   useStocks();
   const { price } = useStockPrice(h ? h.narrative.stockMint : null);
-  if (h === undefined) return <div className="h-40 animate-pulse rounded bg-neutral-50" aria-hidden />;
-  if (h === null) return <>{fallback}</>;
+  // While the lookup is in flight the fallback shows; a real trade, when
+  // there is one, replaces it. Nothing waits on the network to appear.
+  if (h === undefined || h === null) return <>{fallback}</>;
 
   const stock = stockFor(h.narrative.stockMint, h.narrative.stockDecimals);
 

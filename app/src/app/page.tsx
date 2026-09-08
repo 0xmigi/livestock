@@ -98,7 +98,11 @@ export default function Markets() {
             <br />
             <span className="text-neutral-400">Expire into real stocks.</span>
           </h1>
-          <div className="mt-7 lg:col-start-1 lg:row-start-2 lg:self-start">
+          <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-neutral-400 lg:col-span-3 lg:row-start-2">
+            A token for a story about a stock. Every buy fills a vault of that stock, and on the date every token
+            becomes it.
+          </p>
+          <div className="mt-7 lg:col-start-1 lg:row-start-3 lg:self-start">
             <Link href="/create" className="inline-block">
               <Button variant="primary" size="lg" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" strokeWidth={2.5} />
@@ -109,7 +113,7 @@ export default function Markets() {
 
           {/* Proof over pitch: the week's best trade once there is one, the explainer until then. */}
           {/* Two thirds wide: the width of two of the three cards below, so the edges line up. */}
-          <div className="mt-7 min-w-0 overflow-hidden lg:col-span-2 lg:col-start-2 lg:row-start-2 lg:self-start">
+          <div className="mt-7 min-w-0 overflow-hidden lg:col-span-2 lg:col-start-2 lg:row-start-3 lg:self-start">
             <Highlight fallback={<Explainer />} />
           </div>
         </section>

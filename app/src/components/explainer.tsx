@@ -14,17 +14,16 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
-import type { LivelinePoint, LivelineSeries } from "liveline";
+import { Liveline, type LivelinePoint, type LivelineSeries } from "liveline";
 
 import { formatUsdCompact } from "@/lib/config";
 import { useStocks } from "@/lib/stocks";
 import { useTheme } from "@/lib/theme";
 
-const Liveline = dynamic(() => import("liveline").then((m) => m.Liveline), { ssr: false });
-
 /** One loop, in seconds. */
 const LOOP_SECS = 30;
+/** How far into the loop the page opens, so the chart is never empty. */
+const OPEN_AT = 3;
 /** When the post lands and the narrative launches. */
 const LAUNCH_AT = 6;
 /** When the narrative expires into the stock. */
@@ -242,10 +241,13 @@ export function Explainer({ className = "" }: { className?: string }) {
       }
     };
 
-    // Dev: `?at=19` opens the page already 19 seconds into the loop, so a
-    // moment like expiry can be checked without waiting for it.
-    const at = Number(new URLSearchParams(window.location.search).get("at"));
-    if (Number.isFinite(at) && at > 0) {
+    // The loop opens a few seconds in, so there is a line on the chart from
+    // the first frame rather than a dot growing out of nothing. Dev: `?at=19`
+    // opens it 19 seconds in, so a moment like expiry can be checked without
+    // waiting for it.
+    const asked = Number(new URLSearchParams(window.location.search).get("at"));
+    const at = Number.isFinite(asked) && asked > 0 ? asked : OPEN_AT;
+    if (at > 0) {
       const ticks = Math.min(TICKS.loop - 1, Math.floor((at * 1000) / TICK_MS));
       const nowSec = Date.now() / 1000;
       for (let i = 1; i <= ticks; i++) advance(nowSec - ((ticks - i) * TICK_MS) / 1000);
