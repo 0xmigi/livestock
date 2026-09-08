@@ -7,6 +7,7 @@ import { Plus, Search, Sprout } from "lucide-react";
 import { formatStock, redemptionPerToken, secondsRemaining } from "@nm/client";
 
 import { Explainer } from "@/components/explainer";
+import { Ticker } from "@/components/ticker";
 import { Highlight } from "@/components/highlight";
 import { Shell } from "@/components/shell";
 import { Thumb } from "@/components/thumb";
@@ -104,6 +105,9 @@ export default function Markets() {
   return (
     <Shell>
       <div className="space-y-10">
+        {/* Every tokenized stock's price, live, across the top. Real data, all day, whatever is launched. */}
+        <Ticker />
+
         {/* Hero: the pitch, and the numbers so far */}
         <section className="grid pb-6 lg:grid-cols-3 lg:gap-x-3">
           {/* Headline on its own row; the button and the chart share the next, so the chart hangs from the button's line. */}
@@ -203,6 +207,9 @@ export default function Markets() {
           )}
         </section>
 
+        {/* The stocks narratives are built on, always. Real prices; each one a click from launching. */}
+        {rows !== null && list.length > 0 ? <StockGrid stocks={stocks} /> : null}
+
       </div>
     </Shell>
   );
@@ -217,25 +224,40 @@ const LAUNCHPAD_STOCKS = 8;
  * not fake launches.
  */
 function Launchpad({ stocks }: { stocks: StockInfo[] }) {
-  const candidates = stocks.filter((s) => s.available).slice(0, LAUNCHPAD_STOCKS);
   return (
-    <div className="rounded bg-neutral-50 p-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-3 pb-3 pt-2">
+    <StockGrid
+      stocks={stocks}
+      lead={
         <span className="text-sm text-neutral-900">
           Nothing live yet.{" "}
           <span className="text-neutral-400">Pick a stock to launch the first narrative on it.</span>
         </span>
+      }
+    />
+  );
+}
+
+/** The deepest tokenized stocks, each a click from launching on it. */
+function StockGrid({ stocks, lead }: { stocks: StockInfo[]; lead?: React.ReactNode }) {
+  const candidates = stocks.filter((s) => s.available).slice(0, LAUNCHPAD_STOCKS);
+  if (candidates.length === 0) return null;
+  return (
+    <div className="rounded bg-neutral-50 p-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-3 pb-3 pt-2">
+        {lead ?? (
+          <span className="mono text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+            Stocks to build on
+          </span>
+        )}
         <Link href="/how-it-works" className="text-xs text-neutral-400 underline underline-offset-2 hover:text-neutral-900">
           How it works
         </Link>
       </div>
-      {candidates.length > 0 ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {candidates.map((s) => (
-            <LaunchStock key={s.mint} stock={s} />
-          ))}
-        </div>
-      ) : null}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {candidates.map((s) => (
+          <LaunchStock key={s.mint} stock={s} />
+        ))}
+      </div>
     </div>
   );
 }

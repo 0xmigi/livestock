@@ -49,8 +49,10 @@ const RANGE_MIN = 96;
 const RANGE_MAX = 150;
 const RANGE_MARGIN = 0.12;
 const HEAD_BUFFER = 0.015;
-/** The right padding is the future: the expiry line travels through it toward the live head. */
-const PAD = { top: 8, right: 150, bottom: 4, left: 0 };
+/** The right padding is the future: the expiry line travels through it toward the live head. Less of it on a phone. */
+function padFor(width: number) {
+  return { top: 8, right: width > 0 && width < 520 ? 84 : 150, bottom: 4, left: 0 };
+}
 
 const STOCK = "TSLAx";
 const NARRATIVE = "$ROBOTAXI";
@@ -378,6 +380,7 @@ export function Explainer({ className = "" }: { className?: string }) {
   // of expiry the line sits in the future, right of the dot, and slides in;
   // from the expiry tick on it stands on the last live point, which scrolls
   // left with everything else.
+  const PAD = padFor(size.w);
   const plotW = Math.max(0, size.w - PAD.left - PAD.right);
   const fallbackDot = PAD.left + plotW * (1 - HEAD_BUFFER);
   const launchTime = narrative[0]?.time ?? null;
@@ -393,7 +396,11 @@ export function Explainer({ className = "" }: { className?: string }) {
   const expiryX = phase === "after" ? stoppedX : approachX;
   const stopped = phase === "after" && head !== null;
   return (
-    <div className={`min-w-0 overflow-hidden rounded bg-neutral-50 p-5 ${className}`}>
+    <div className={`relative min-w-0 overflow-hidden rounded bg-neutral-50 p-5 ${className}`}>
+      {/* So nobody reads it as live data. */}
+      <div className="mono pointer-events-none absolute left-5 top-4 text-[10px] uppercase tracking-[0.18em] text-neutral-400">
+        example
+      </div>
       <div ref={box} className="explainer-chart relative h-48 w-full min-w-0">
         <Liveline
           data={stock}
@@ -460,8 +467,8 @@ export function Explainer({ className = "" }: { className?: string }) {
       </div>
 
       {/* Underneath: the two numbers, and the story beside them. Nothing above the chart. */}
-      <div className="mt-5 flex h-11 items-center gap-10">
-        <div className="flex shrink-0 gap-10">
+      <div className="mt-5 flex flex-col gap-3 sm:h-11 sm:flex-row sm:items-center sm:gap-10">
+        <div className="flex h-11 shrink-0 gap-10">
         <div>
           <div className="mono text-[11px] text-neutral-400">$100 in {STOCK}</div>
           <div className="mono mt-1 text-2xl font-semibold leading-none text-neutral-900">${stockNow.toFixed(0)}</div>
@@ -475,7 +482,7 @@ export function Explainer({ className = "" }: { className?: string }) {
 
         {/* One beat at a time. The post is the second beat. Fixed height so nothing shifts. */}
         {/* A rule marks where each beat lands; the sentences are italic, the post is not. */}
-        <div key={beat} className="explainer-beat flex h-full min-w-0 flex-1 items-center border-l-2 border-neutral-200 pl-4">
+        <div key={beat} className="explainer-beat flex h-10 min-w-0 flex-1 items-center border-l-2 border-neutral-200 pl-4 sm:h-full">
           {beat === 1 ? (
             <div className="flex items-center gap-4">
               <p className="shrink-0 text-sm italic leading-snug text-neutral-600">Elon posts</p>
