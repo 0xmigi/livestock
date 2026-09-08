@@ -38,10 +38,7 @@ import { useStocks } from "@/lib/stocks";
 
 type View = "live" | "ended";
 
-const PAGE = 20;
-/** Launches before the hero's tally is worth showing at all. */
-const TALLY_MIN = 10;
-const WEEK = 7 * 24 * 3600;
+const PAGE = 10;
 
 export default function Markets() {
   const { rows, error } = useNarratives();
@@ -67,18 +64,6 @@ export default function Markets() {
     () => (rows ?? []).filter((n) => isLivePhase(phaseOf(n.status, secondsRemaining(n, now)))),
     [rows, now],
   );
-
-  const stats = useMemo(() => {
-    let locked = 0;
-    let fdv = 0;
-    let soon = 0;
-    for (const n of live) {
-      locked += usdOf(n, n.vaultBalance, prices);
-      fdv += fdvOf(n, prices);
-      if (secondsRemaining(n, now) < WEEK) soon++;
-    }
-    return { launched: rows?.length ?? 0, live: live.length, locked, fdv, soon };
-  }, [rows, live, prices, now]);
 
   const list = useMemo(() => {
     if (!rows) return [];
@@ -122,23 +107,10 @@ export default function Markets() {
             </Link>
           </div>
 
-          {/* Proof over pitch: the week's best trade, or the tally once it is worth showing. Small numbers say less than no numbers. */}
+          {/* Proof over pitch: the week's best trade once there is one, the explainer until then. */}
           {/* Two thirds wide: the width of two of the three cards below, so the edges line up. */}
           <div className="mt-7 min-w-0 overflow-hidden lg:col-span-2 lg:col-start-2 lg:row-start-2 lg:self-start">
-            <Highlight
-              fallback={
-                rows && stats.launched < TALLY_MIN ? <Explainer /> : (
-                <div className="rounded bg-neutral-50 p-5">
-                  <div className="text-sm text-neutral-400">Livestock so far</div>
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    <Stat label="launched" value={rows ? String(stats.launched) : "—"} />
-                    <Stat label="combined FDV" value={rows ? compact(stats.fdv) : "—"} />
-                    <Stat label="locked in vaults" value={rows ? compact(stats.locked) : "—"} />
-                  </div>
-                </div>
-                )
-              }
-            />
+            <Highlight fallback={<Explainer />} />
           </div>
         </section>
 
@@ -286,14 +258,6 @@ function LaunchStock({ stock }: { stock: StockInfo }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded bg-neutral-100 px-3 py-3">
-      <div className="mono text-xl font-semibold leading-none text-neutral-900 sm:text-2xl">{value}</div>
-      <div className="mt-1.5 text-[11px] text-neutral-400">{label}</div>
-    </div>
-  );
-}
 
 type ListProps = {
   rows: NarrativeRow[];

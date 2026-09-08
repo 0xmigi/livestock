@@ -17,6 +17,7 @@
     "@solana-program/token": "^0.16.1",
     "@solana-program/token-2022": "^0.16.1",
     "@solana/kit": "^8.2.0",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.8.0",
     "liveline": "^0.0.7",
     "lucide-react": "^1.40.0",

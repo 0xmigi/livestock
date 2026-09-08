@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 
 import { Providers } from "@/components/providers";
 import { APP_NAME, TAGLINE } from "@/lib/config";
@@ -55,6 +56,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen font-sans antialiased">
         <Providers>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   );

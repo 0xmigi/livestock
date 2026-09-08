@@ -23,7 +23,11 @@ export function Ticker() {
   // Twice over, so the loop has no seam.
   const row = [...items, ...items];
   return (
-    <div className="ticker -mx-5 overflow-hidden sm:mx-0" aria-label="Tokenized stock prices">
+    <div
+      className="ticker -mx-5 overflow-hidden opacity-55 transition-opacity hover:opacity-100 sm:mx-0"
+      style={{ maskImage: "linear-gradient(to right, transparent, black 8%, black 92%, transparent)" }}
+      aria-label="Tokenized stock prices"
+    >
       <div className="ticker-track flex w-max items-center gap-7 pr-7">
         {row.map((s, i) => {
           const change = s.change24hPercent;
