@@ -1,17 +1,18 @@
-"use client";
-
 /**
  * Off-chain token metadata for narrative mints.
  *
  * Every narrative mint carries a `TokenMetadata` extension whose `uri` points
  * at a JSON document with the image. This reads the extension off the mint,
- * fetches the JSON once, and caches it for the session.
+ * fetches the JSON, and caches it: for the session in the browser, for a
+ * few minutes on the server (see `maxAgeMs`).
  */
 
 import { fetchAllMaybeMint } from "@solana-program/token-2022";
 import { unwrapOption, type Address } from "@solana/kit";
 
-import { rpc } from "./config";
+import { rpc as browserRpc } from "./config";
+
+type Rpc = Parameters<typeof fetchAllMaybeMint>[0];
 
 export type TokenMeta = {
   uri: string;
@@ -24,7 +25,7 @@ export type TokenMeta = {
   telegram?: string;
 };
 
-const cache = new Map<Address, Promise<TokenMeta | null>>();
+const cache = new Map<Address, { at: number; meta: Promise<TokenMeta | null> }>();
 
 async function fetchJson(uri: string): Promise<Partial<TokenMeta>> {
   const controller = new AbortController();
@@ -59,19 +60,29 @@ export function invalidateTokenMeta(mint: Address): void {
   cache.delete(mint);
 }
 
-/** Reads metadata for a batch of narrative mints. Missing entries are null. */
+/**
+ * Reads metadata for a batch of narrative mints. Missing entries are null.
+ * Entries older than `maxAgeMs` are fetched again; the browser keeps them
+ * for the session, the server for a few minutes so edits show up.
+ */
 export async function fetchTokenMeta(
   mints: Address[],
+  rpc: Rpc = browserRpc,
+  maxAgeMs = Number.POSITIVE_INFINITY,
 ): Promise<Map<Address, TokenMeta | null>> {
-  const missing = mints.filter((m) => !cache.has(m));
+  const now = Date.now();
+  const missing = mints.filter((m) => {
+    const hit = cache.get(m);
+    return !hit || now - hit.at > maxAgeMs;
+  });
 
   if (missing.length > 0) {
     // Resolve in one RPC call, then fan out to the JSON documents.
     const batch = fetchAllMaybeMint(rpc, missing).catch(() => null);
     for (const mint of missing) {
-      cache.set(
-        mint,
-        batch.then(async (accounts) => {
+      cache.set(mint, {
+        at: now,
+        meta: batch.then(async (accounts) => {
           const account = accounts?.find((a) => a.address === mint);
           if (!account || !account.exists) return null;
           const extensions = unwrapOption(account.data.extensions) ?? [];
@@ -83,14 +94,14 @@ export async function fetchTokenMeta(
           if (!/^https?:\/\//.test(meta.uri)) return { uri: meta.uri, permanentDelegate };
           return { uri: meta.uri, permanentDelegate, ...(await fetchJson(meta.uri)) };
         }),
-      );
+      });
     }
   }
 
   const out = new Map<Address, TokenMeta | null>();
   await Promise.all(
     mints.map(async (m) => {
-      out.set(m, (await cache.get(m)) ?? null);
+      out.set(m, (await cache.get(m)?.meta) ?? null);
     }),
   );
   return out;

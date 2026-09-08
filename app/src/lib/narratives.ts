@@ -1,24 +1,16 @@
 "use client";
 
 /**
- * Reading narratives and holder positions straight from account data.
+ * Narratives and holder positions, in the browser.
  *
- * There is no indexer: the discover page pulls every account owned by the
- * program and decodes it client-side. Fine at this scale; the first thing to
- * replace when it isn't.
+ * The list comes from /api/narratives, which scans the program's accounts
+ * once on the server and shares the result. A single narrative is read
+ * straight from the chain here, so a page refreshes as fast as the chain
+ * does. The registry adds the stock and decides what is shown.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  decodeNarrative,
-  decodeTokenAmount,
-  findNarrative,
-  findVault,
-  NARRATIVE_ACCOUNT_LEN,
-  NARRATIVE_DISCRIMINATOR,
-  NARRATIVE_MARKETS_PROGRAM_ID,
-  type Narrative,
-} from "@nm/client";
+import { decodeNarrative, decodeTokenAmount, findVault, type Narrative } from "@nm/client";
 import {
   findAssociatedTokenPda,
   TOKEN_PROGRAM_ADDRESS,
@@ -33,7 +25,15 @@ import {
   TOKEN_PROGRAM,
   type StockInfo,
 } from "./config";
-import { fetchTokenMeta, type TokenMeta } from "./metadata";
+import { parseBig } from "./json-big";
+import type { TokenMeta } from "./metadata";
+import {
+  decodeBase64,
+  decorateNarratives,
+  fetchTokenAmounts,
+  type BareNarrative,
+  type ScannedNarrative,
+} from "./scan";
 
 export type NarrativeRow = Narrative & {
   address: Address;
@@ -52,10 +52,6 @@ export type Position = {
   stockBalance: bigint;
 };
 
-function decodeBase64(value: string): Uint8Array {
-  return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
-}
-
 async function fetchData(addr: Address): Promise<Uint8Array | null> {
   const { value } = await rpc
     .getAccountInfo(addr, { encoding: "base64" })
@@ -66,23 +62,6 @@ async function fetchData(addr: Address): Promise<Uint8Array | null> {
 async function fetchTokenAmount(addr: Address): Promise<bigint> {
   const data = await fetchData(addr);
   return data ? decodeTokenAmount(data) : 0n;
-}
-
-/** Balances of many token accounts in one RPC call. Missing accounts read 0. */
-async function fetchTokenAmounts(addrs: Address[]): Promise<bigint[]> {
-  if (addrs.length === 0) return [];
-  const out: bigint[] = [];
-  // getMultipleAccounts caps at 100 addresses per call.
-  for (let i = 0; i < addrs.length; i += 100) {
-    const chunk = addrs.slice(i, i + 100);
-    const { value } = await rpc
-      .getMultipleAccounts(chunk, { encoding: "base64" })
-      .send();
-    for (const account of value) {
-      out.push(account ? decodeTokenAmount(decodeBase64(account.data[0])) : 0n);
-    }
-  }
-  return out;
 }
 
 async function ata(
@@ -110,60 +89,29 @@ export async function fetchStockTokenProgram(
   return (value?.owner as Address | undefined) ?? TOKEN_PROGRAM;
 }
 
-async function decorate(
-  bare: (Narrative & { address: Address })[],
-): Promise<NarrativeRow[]> {
-  const [balances, metas] = await Promise.all([
-    fetchTokenAmounts(bare.map((n) => n.vault)),
-    fetchTokenMeta(bare.map((n) => n.narrativeMint)),
-  ]);
-
-  return bare.map((n, i) => ({
-    ...n,
-    vaultBalance: balances[i] ?? 0n,
-    stock: stockFor(n.stockMint, n.stockDecimals),
-    meta: metas.get(n.narrativeMint) ?? null,
-  }));
+/** The registry's part: which stock, and whether this deployment shows it at all. */
+function withStock(rows: ScannedNarrative[]): NarrativeRow[] {
+  // The registry limits the page to stocks this deployment knows. Until it
+  // has loaded (or with nothing configured), show everything.
+  const stocks = getStocks();
+  return rows
+    .filter((n) => stocks.length === 0 || stocks.some((s) => s.mint === n.stockMint))
+    .map((n) => ({ ...n, stock: stockFor(n.stockMint, n.stockDecimals) }));
 }
 
-/** Every narrative the program knows about. */
+async function decorate(bare: BareNarrative[]): Promise<NarrativeRow[]> {
+  return withStock(await decorateNarratives(rpc, bare));
+}
+
+/** Every narrative, from the server's shared scan. */
 async function loadAll(): Promise<NarrativeRow[]> {
-  const accounts = await rpc
-    .getProgramAccounts(NARRATIVE_MARKETS_PROGRAM_ID, {
-      encoding: "base64",
-      // Size alone narrows it enough; discriminator and version are checked
-      // by the decoder.
-      filters: [{ dataSize: BigInt(NARRATIVE_ACCOUNT_LEN) }],
-    })
-    .send();
-
-  const bare: (Narrative & { address: Address })[] = [];
-  for (const { pubkey, account } of accounts) {
-    try {
-      const data = decodeBase64(account.data[0]);
-      if (data[0] !== NARRATIVE_DISCRIMINATOR) continue;
-      const narrative = decodeNarrative(data);
-
-      // Accounts from earlier layouts that happen to share the size and
-      // version byte are rejected here: their address will not match the
-      // current seed derivation.
-      const [expected] = await findNarrative(narrative.narrativeMint);
-      if (expected !== pubkey) continue;
-
-      // The registry limits the page to stocks this deployment knows. Until
-      // it has loaded (or with nothing configured), show everything.
-      const stocks = getStocks();
-      if (stocks.length > 0 && !stocks.some((s) => s.mint === narrative.stockMint)) {
-        continue;
-      }
-
-      bare.push({ ...narrative, address: pubkey });
-    } catch {
-      // Skip anything that does not decode rather than failing the page.
-    }
+  const response = await fetch("/api/narratives", { cache: "no-store" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `The narrative list failed to load (${response.status}).`);
   }
-
-  const rows = await decorate(bare);
+  const { narratives } = parseBig<{ narratives: ScannedNarrative[] }>(await response.text());
+  const rows = withStock(narratives);
   // Expiring soonest first — the thing a visitor most wants to see.
   return rows.sort((a, b) => Number(a.expiryTs) - Number(b.expiryTs));
 }
@@ -239,7 +187,7 @@ export function useNarrative(
           owner,
           decoded.stockTokenProgram,
         );
-        const [tokens, stockBalance, creator] = await fetchTokenAmounts([
+        const [tokens, stockBalance, creator] = await fetchTokenAmounts(rpc, [
           tokenAccount,
           stockAccount,
           creatorTokens,
