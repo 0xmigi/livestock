@@ -3,15 +3,12 @@
 /**
  * The hero's explainer: one narrative's life, on a loop, as a live chart.
  *
- * A stock ticks along. Something happens to the company and a narrative
- * launches on it: a second line, in the brand colour, that runs hotter than
- * the stock. On its date the narrative expires and every token becomes the
- * stock; the narrative line stops and the stock line carries on. Then it
- * starts again with a different story.
+ * A stock ticks along. The story breaks, a narrative launches on it at
+ * exactly the stock's price, and runs hotter. On its date it expires into
+ * the stock; its line stops, the stock carries on. Then it starts again.
  *
- * Simulated, and says so. It stands in for "best trade this week" until
- * there are real trades to show, and it is drawn with liveline so it feels
- * like the market pages rather than a diagram.
+ * Almost no words. The chart does the talking: one line of text for the
+ * story, two numbers underneath. Keep it that way.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -22,30 +19,20 @@ import { useTheme } from "@/lib/theme";
 
 const Liveline = dynamic(() => import("liveline").then((m) => m.Liveline), { ssr: false });
 
-/** One loop, in seconds of wall-clock time. */
+/** One loop, in seconds. */
 const LOOP_SECS = 22;
 /** When the story breaks and the narrative launches. */
 const LAUNCH_AT = 5;
 /** When the narrative expires into the stock. */
 const EXPIRY_AT = 16;
-/** The chart's visible time window. The whole loop fits inside it. */
-const WINDOW_SECS = LOOP_SECS;
-/** How often a point is added. */
 const TICK_MS = 120;
 
 /** Same $100 into each, so the two lines are directly comparable. */
 const STAKE = 100;
 
-type Story = { stock: string; ticker: string; event: string; narrative: string };
-
-/** Every loop tells a different one. All plausible, none real. */
-const STORIES: Story[] = [
-  { stock: "NVDAx", ticker: "NVDA", event: "NVIDIA teases a new chip", narrative: "$BLACKWELL2" },
-  { stock: "TSLAx", ticker: "TSLA", event: "Robotaxi pilot goes live in Austin", narrative: "$ROBOTAXI" },
-  { stock: "AAPLx", ticker: "AAPL", event: "Apple rumoured to ship a foldable", narrative: "$FOLD" },
-  { stock: "COINx", ticker: "COIN", event: "Coinbase files for a bank charter", narrative: "$CBBANK" },
-  { stock: "HOODx", ticker: "HOOD", event: "Robinhood opens tokenized stocks to the EU", narrative: "$HOODEU" },
-];
+const STOCK = "HOODx";
+const NARRATIVE = "$HOODEU";
+const STORY = "Robinhood opens tokenized stocks to the EU";
 
 type Phase = "before" | "live" | "after";
 
@@ -55,28 +42,27 @@ function phaseAt(t: number): Phase {
   return "after";
 }
 
-/** A gentle random walk with a drift, in percent per tick. */
+/** A random walk with a drift, in fractions per tick. */
 function step(value: number, drift: number, noise: number): number {
   return value * (1 + drift + (Math.random() - 0.5) * noise);
 }
 
 export function Explainer({ className = "" }: { className?: string }) {
   const { theme } = useTheme();
-  const [story, setStory] = useState(0);
   const [phase, setPhase] = useState<Phase>("before");
   const [stock, setStock] = useState<LivelinePoint[]>([]);
   const [narrative, setNarrative] = useState<LivelinePoint[]>([]);
-  const start = useRef<number>(0);
   const frozen = useRef<number | null>(null);
 
   useEffect(() => {
     let alive = true;
+    let start = Date.now();
     let stockValue = STAKE;
     let narrativeValue = STAKE;
     let lastPhase: Phase = "before";
 
     const reset = () => {
-      start.current = Date.now();
+      start = Date.now();
       stockValue = STAKE;
       narrativeValue = STAKE;
       frozen.current = null;
@@ -90,14 +76,13 @@ export function Explainer({ className = "" }: { className?: string }) {
     const timer = setInterval(() => {
       if (!alive) return;
       const nowMs = Date.now();
-      const t = (nowMs - start.current) / 1000;
-      // liveline wants unix seconds.
-      const now = nowMs / 1000;
+      const t = (nowMs - start) / 1000;
       if (t >= LOOP_SECS) {
-        setStory((s) => (s + 1) % STORIES.length);
         reset();
         return;
       }
+      // liveline wants unix seconds.
+      const now = nowMs / 1000;
       const p = phaseAt(t);
 
       // The stock drifts up a little, always. It is a stock.
@@ -105,9 +90,13 @@ export function Explainer({ className = "" }: { className?: string }) {
       setStock((d) => [...d, { time: now, value: stockValue }]);
 
       if (p === "live") {
-        if (lastPhase === "before") narrativeValue = stockValue;
-        // The narrative runs hotter: more drift, more noise.
-        narrativeValue = step(narrativeValue, 0.004, 0.05);
+        if (lastPhase === "before") {
+          // Launch: the narrative starts at exactly the stock's price.
+          narrativeValue = stockValue;
+        } else {
+          // Then runs hotter: more drift, more noise. A leveraged story.
+          narrativeValue = step(narrativeValue, 0.004, 0.05);
+        }
         setNarrative((d) => [...d, { time: now, value: narrativeValue }]);
       } else if (p === "after" && lastPhase === "live") {
         // Expiry. The narrative is now the stock; its line stops here.
@@ -126,63 +115,36 @@ export function Explainer({ className = "" }: { className?: string }) {
     };
   }, []);
 
-  const s = STORIES[story];
   const ink = theme === "dark" ? "#b8b8b4" : "#4a4a48";
   const ochre = theme === "dark" ? "#e0993a" : "#b8741a";
-
-  const series = useMemo<LivelineSeries[]>(() => {
-    const out: LivelineSeries[] = [
-      { id: "stock", data: stock, value: stock[stock.length - 1]?.value ?? STAKE, color: ink, label: s.stock },
-    ];
-    if (narrative.length > 0) {
-      out.push({
-        id: "narrative",
-        data: narrative,
-        value: frozen.current ?? narrative[narrative.length - 1]?.value ?? STAKE,
-        color: ochre,
-        label: `${s.narrative} narrative`,
-      });
-    }
-    return out;
-  }, [stock, narrative, ink, ochre, s]);
 
   const stockNow = stock[stock.length - 1]?.value ?? STAKE;
   const narrativeNow = frozen.current ?? narrative[narrative.length - 1]?.value ?? STAKE;
 
+  const series = useMemo<LivelineSeries[]>(() => {
+    const out: LivelineSeries[] = [{ id: "stock", data: stock, value: stockNow, color: ink, label: STOCK }];
+    if (narrative.length > 0) {
+      out.push({ id: "narrative", data: narrative, value: narrativeNow, color: ochre, label: NARRATIVE });
+    }
+    return out;
+  }, [stock, narrative, stockNow, narrativeNow, ink, ochre]);
+
   return (
-    <div className={`rounded bg-neutral-50 p-4 ${className}`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="text-xs text-neutral-400">How a narrative goes</div>
-        <div className="mono text-[11px] text-neutral-400">simulated</div>
+    <div className={`rounded bg-neutral-50 p-5 ${className}`}>
+      {/* One line. Appears when the story breaks, stays for the rest of the loop. */}
+      <div className="h-5 text-sm text-neutral-900">
+        {phase === "before" ? null : STORY}
       </div>
 
-      {/* The caption is the story, one line per phase. Fixed height so the chart never jumps. */}
-      <div className="mt-2 h-10 text-sm leading-snug">
-        {phase === "before" ? (
-          <span className="text-neutral-400">
-            <span className="text-neutral-900">{s.stock}</span> trading on Solana. Nothing new.
-          </span>
-        ) : phase === "live" ? (
-          <span className="text-neutral-400">
-            <span className="text-neutral-900">{s.event}.</span> Someone launches{" "}
-            <span className="text-accent">{s.narrative}</span> on it.
-          </span>
-        ) : (
-          <span className="text-neutral-400">
-            <span className="text-neutral-900">Date reached.</span> Every {s.narrative} token becomes{" "}
-            {s.stock}. The stock carries on.
-          </span>
-        )}
-      </div>
-
-      <div className="mt-2 h-36">
+      <div className="mt-3 h-40">
         <Liveline
           data={stock}
           value={stockNow}
           series={series}
+          seriesToggleCompact
           theme={theme === "dark" ? "dark" : "light"}
           color={ink}
-          window={WINDOW_SECS}
+          window={LOOP_SECS}
           grid={false}
           badge={false}
           momentum={false}
@@ -196,18 +158,18 @@ export function Explainer({ className = "" }: { className?: string }) {
         />
       </div>
 
-      {/* Same $100 into each. This is the whole pitch in two numbers. */}
-      <div className="mono mt-2 flex items-baseline justify-between text-xs">
-        <span className="text-neutral-400">
-          $100 in {s.ticker} <span className="text-neutral-900">${stockNow.toFixed(0)}</span>
-        </span>
-        <span className={narrative.length > 0 ? "text-neutral-400" : "text-neutral-300"}>
-          $100 in {s.narrative}{" "}
-          <span className={narrative.length > 0 ? "text-accent" : ""}>
+      {/* Two numbers, far apart. Same $100 into each. */}
+      <div className="mt-4 grid grid-cols-2 gap-6">
+        <div>
+          <div className="mono text-[11px] text-neutral-400">$100 in {STOCK}</div>
+          <div className="mono mt-1 text-2xl font-semibold leading-none text-neutral-900">${stockNow.toFixed(0)}</div>
+        </div>
+        <div>
+          <div className="mono text-[11px] text-neutral-400">$100 in {NARRATIVE}</div>
+          <div className={`mono mt-1 text-2xl font-semibold leading-none ${narrative.length > 0 ? "text-accent" : "text-neutral-300"}`}>
             {narrative.length > 0 ? `$${narrativeNow.toFixed(0)}` : "—"}
-          </span>
-          {phase === "after" ? <span className="text-neutral-400"> in {s.stock}</span> : null}
-        </span>
+          </div>
+        </div>
       </div>
     </div>
   );
