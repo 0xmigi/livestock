@@ -409,7 +409,7 @@ export default function Create() {
               <input
                 value={stockQuery}
                 onChange={(e) => setStockQuery(e.target.value)}
-                placeholder={stocks.length > 0 ? `Search ${stocks.length} stocks` : "Search stocks"}
+                placeholder="Search"
                 className={`${inputClass} pl-9`}
                 aria-label="Search stocks"
                 autoFocus

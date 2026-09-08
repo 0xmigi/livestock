@@ -341,7 +341,7 @@ export function Segmented<T extends string>({
 }
 
 export const inputClass =
-  "w-full rounded border border-neutral-200 bg-neutral-50 px-3.5 py-3 text-[15px] text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-400";
+  "w-full rounded border border-neutral-200 bg-neutral-50 px-3.5 py-3 text-[15px] text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-300 focus-visible:outline-none";
 
 export function Field({
   label,

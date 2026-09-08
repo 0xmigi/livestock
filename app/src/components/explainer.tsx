@@ -138,7 +138,7 @@ function step(random: () => number, value: number, drift: number, noise: number)
 export function Explainer({ className = "" }: { className?: string }) {
   const { theme } = useTheme();
   const [phase, setPhase] = useState<Phase>("before");
-  /** At expiry: an early buyer's stock over a straight buy's, from the vault share. See the tick loop. */
+  /** At expiry: the chart's $100 in the narrative, as stock, over a straight buy's. See the tick loop. */
   const [multiple, setMultiple] = useState<number | null>(null);
   const [stock, setStock] = useState<LivelinePoint[]>([]);
   const [narrative, setNarrative] = useState<LivelinePoint[]>([]);
@@ -220,8 +220,10 @@ export function Explainer({ className = "" }: { className?: string }) {
         ratioSum += narrativeValue / stockValue;
         ratioCount += 1;
       } else if (p === "after" && lastPhase === "live") {
-        // What an early buyer actually ends up with, in stock, next to a
-        // straight buy of the stock at the same moment. At expiry every token
+        // What the $100 shown on the chart (bought at launch) actually ends
+        // up with, in stock, next to a straight buy of the stock at the same
+        // moment. Never say "early buyer": the point is the mechanism, not
+        // who got in first. At expiry every token
         // redeems for its share of the vault, and the vault holds what all
         // buyers paid in (less the 1% fee), so a token is worth the average
         // price paid, not the last price. With buying spread evenly over the
@@ -309,7 +311,7 @@ export function Explainer({ className = "" }: { className?: string }) {
       Someone launches <span className="text-neutral-900">{NARRATIVE}</span> on {STOCK}, two-week expiry.
     </>,
     <>
-      An early buyer ends up with{" "}
+      That $100 in {NARRATIVE} redeems for{" "}
       <span className="text-neutral-900">{multiple ? `${multiple.toFixed(1)}×` : "more"}</span> the {STOCK} a
       straight buy got.
     </>,

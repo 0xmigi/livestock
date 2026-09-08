@@ -88,7 +88,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /** Copies text and reports "copied" for a moment. */
-function useCopy(): [boolean, (text: string) => void] {
+export function useCopy(): [boolean, (text: string) => void] {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;

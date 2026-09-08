@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Sprout } from "lucide-react";
+import { Check, Copy, Plus, Search, Sprout } from "lucide-react";
 import { formatStock, redemptionPerToken, secondsRemaining } from "@nm/client";
 
 import { Explainer } from "@/components/explainer";
@@ -22,10 +22,9 @@ import {
   StockLogo,
   TimeBar,
 } from "@/components/ui";
-import { formatUsd, formatUsdAuto, type StockInfo } from "@/lib/config";
+import { formatUsd, formatUsdAuto, shortAddress, type StockInfo } from "@/lib/config";
 import { backingOf, compact, fdvOf, isLivePhase, tokenPriceOf, usdOf } from "@/lib/figures";
 import { usePriceChange } from "@/lib/change";
-import { useStockMeta } from "@/lib/logos";
 import {
   formatCountdown,
   formatDate,
@@ -34,6 +33,7 @@ import {
   type NarrativeRow,
 } from "@/lib/narratives";
 import { useStockPrices } from "@/lib/price";
+import { useCopy } from "@/components/wallet";
 import { useStocks } from "@/lib/stocks";
 
 type View = "live" | "ended";
@@ -99,7 +99,8 @@ export default function Markets() {
             <span className="text-neutral-400">that expire into stocks</span>
           </h1>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-neutral-400 lg:col-span-3 lg:row-start-2">
-            Every buy fills a vault of the stock. On the date, every token becomes it.
+            Short-lived markets for the stories moving stocks—priced, backed, and paid out in the underlying tokenized
+            stock.
           </p>
           <div className="mt-7 lg:col-start-1 lg:row-start-3 lg:self-start">
             <Link href="/create" className="inline-block">
@@ -143,8 +144,8 @@ export default function Markets() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search narratives or stocks"
-                className="h-8 w-full rounded border border-neutral-200 bg-neutral-50 pl-9 pr-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400"
+                placeholder="Search"
+                className="h-8 w-full rounded border border-neutral-200 bg-neutral-50 pl-9 pr-3 text-sm text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-300 focus-visible:outline-none"
                 aria-label="Search narratives"
               />
             </label>
@@ -262,6 +263,27 @@ function LaunchStock({ stock }: { stock: StockInfo }) {
 }
 
 
+/** The token's contract address, shortened, and a click to copy the whole thing. A check for a moment after. */
+function CopyAddress({ address }: { address: string }) {
+  const [copied, copy] = useCopy();
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copy(address);
+      }}
+      className="inline-flex items-center gap-1 rounded px-1 text-[11px] text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+      title={`Copy ${address}`}
+      aria-label={`Copy contract address ${address}`}
+    >
+      {shortAddress(address)}
+      {copied ? <Check className="h-3 w-3 text-success" strokeWidth={2.5} /> : <Copy className="h-3 w-3" strokeWidth={2} />}
+    </button>
+  );
+}
+
 type ListProps = {
   rows: NarrativeRow[];
   now: number;
@@ -283,7 +305,10 @@ function MobileList({ rows, now, prices, view }: ListProps) {
             <div className="flex items-center gap-3">
               <Thumb src={n.meta?.image} name={n.name} size={44} shape="square" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[15px] font-semibold text-neutral-900">{n.name}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[15px] font-semibold text-neutral-900">{n.name}</span>
+                  <CopyAddress address={n.narrativeMint} />
+                </div>
                 <div className="mono mt-0.5 text-xs text-neutral-400">
                   {view === "live"
                     ? `${compact(fdvOf(n, prices))} FDV · ${formatCountdown(remaining)}`
@@ -308,7 +333,6 @@ function MobileList({ rows, now, prices, view }: ListProps) {
 
 function Table({ rows, now, prices, view }: ListProps) {
   const router = useRouter();
-  const meta = useStockMeta();
   const th = "px-4 py-2.5 text-left text-xs font-medium text-neutral-400";
   return (
     <div className="overflow-hidden rounded bg-neutral-50">
@@ -343,14 +367,16 @@ function Table({ rows, now, prices, view }: ListProps) {
                       <span className="block truncate text-[15px] font-semibold leading-tight text-neutral-900">{n.name}</span>
                       <span className="mono mt-0.5 flex items-center gap-2 text-xs text-neutral-400">
                         {n.symbol}
-                        {phase !== "live" ? <StatusDot phase={phase} /> : null}
+                        <CopyAddress address={n.narrativeMint} />
+                        {/* No "Ending soon": the timer says it. Only the settling states get a label. */}
+                        {phase !== "live" && phase !== "closing" ? <StatusDot phase={phase} /> : null}
                       </span>
                     </span>
                   </Link>
                 </td>
+                {/* Quiet on purpose: the narrative is the subject of the row, the stock is where it ends up. */}
                 <td className="px-4 py-3">
-                  <span className="mono flex items-center gap-2 text-sm text-neutral-900" title={meta[n.stockMint]?.name}>
-                    <StockLogo stock={n.stock} size={20} />
+                  <span className="mono text-xs text-neutral-400" title={n.stock.name}>
                     {n.stock.symbol}
                   </span>
                 </td>
