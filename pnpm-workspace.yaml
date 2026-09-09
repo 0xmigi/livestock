@@ -4,6 +4,7 @@ packages:
   - scripts
 allowBuilds:
   '@reown/appkit': false
+  bigint-buffer: false
   bufferutil: false
   esbuild: true
   keccak: false

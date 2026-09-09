@@ -11,10 +11,5 @@
     "dev": "pnpm run build:client && pnpm --filter @nm/app dev",
     "build": "pnpm run build:client && pnpm --filter @nm/app build",
     "typecheck": "pnpm -r typecheck"
-  },
-  "pnpm": {
-    "ignoredBuiltDependencies": [
-      "bigint-buffer"
-    ]
   }
 }
