@@ -1,0 +1,11 @@
+{
+  "name": "Livestock",
+  "project_url": "https://livestock.gg",
+  "contacts": "link:https://x.com/livestock_gg,link:https://github.com/0xmigi/livestock/security/advisories/new",
+  "policy": "https://github.com/0xmigi/livestock/blob/main/SECURITY.md",
+  "preferred_languages": "en",
+  "source_code": "https://github.com/0xmigi/livestock",
+  "source_release": "v0.1.0",
+  "auditors": "None",
+  "acknowledgements": "Report a vulnerability responsibly and we will credit you here."
+}

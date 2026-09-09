@@ -1,0 +1,226 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "version": "1.0.0",
+  "program": {
+    "kind": "programNode",
+    "name": "livestock",
+    "publicKey": "5X7RTCFFLgCpsRiskzm1gBEQmbzBEL39H6WpN9YzSizB",
+    "version": "0.1.0",
+    "docs": [
+      "Short-lived tokens about a story concerning a public company, which expire into that company's tokenized stock.",
+      "Buys are priced on a pump.fun-shaped curve denominated in the stock; the stock paid in sits in a vault the creator can never touch.",
+      "At expiry the curve freezes and every token is paid its share of the vault, by the holder or by anyone on their behalf."
+    ],
+    "pdas": [
+      {
+        "kind": "pdaNode",
+        "name": "narrative",
+        "docs": ["One per narrative mint. Owns the vault and is the mint's authority and permanent delegate."],
+        "seeds": [
+          { "kind": "constantPdaSeedNode", "type": { "kind": "bytesTypeNode" }, "value": { "kind": "bytesValueNode", "data": "narrative", "encoding": "utf8" } },
+          { "kind": "variablePdaSeedNode", "name": "narrativeMint", "type": { "kind": "publicKeyTypeNode" }, "docs": ["The narrative token's mint."] }
+        ]
+      }
+    ],
+    "accounts": [
+      {
+        "kind": "accountNode",
+        "name": "narrative",
+        "size": 282,
+        "docs": ["A narrative: the story, its stock, its date, and the curve's state. 2-byte header then 280 bytes, repr(C)."],
+        "pda": { "kind": "pdaLinkNode", "name": "narrative" },
+        "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }],
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            { "kind": "structFieldTypeNode", "name": "discriminator", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "defaultValue": { "kind": "numberValueNode", "number": 1 }, "defaultValueStrategy": "omitted", "docs": ["Always 1."] },
+            { "kind": "structFieldTypeNode", "name": "version", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "docs": ["Layout version. Currently 3."] },
+            { "kind": "structFieldTypeNode", "name": "creator", "type": { "kind": "publicKeyTypeNode" } },
+            { "kind": "structFieldTypeNode", "name": "stockMint", "type": { "kind": "publicKeyTypeNode" }, "docs": ["The tokenized stock this narrative expires into."] },
+            { "kind": "structFieldTypeNode", "name": "narrativeMint", "type": { "kind": "publicKeyTypeNode" } },
+            { "kind": "structFieldTypeNode", "name": "vault", "type": { "kind": "publicKeyTypeNode" }, "docs": ["Stock token account owned by the narrative PDA."] },
+            { "kind": "structFieldTypeNode", "name": "stockTokenProgram", "type": { "kind": "publicKeyTypeNode" }, "docs": ["SPL Token or Token-2022, whichever the stock mint belongs to."] },
+            { "kind": "structFieldTypeNode", "name": "name", "type": { "kind": "fixedSizeTypeNode", "size": 32, "type": { "kind": "bytesTypeNode" } }, "docs": ["UTF-8, zero padded; nameLen bytes are meaningful."] },
+            { "kind": "structFieldTypeNode", "name": "symbol", "type": { "kind": "fixedSizeTypeNode", "size": 10, "type": { "kind": "bytesTypeNode" } }, "docs": ["UTF-8, zero padded; symbolLen bytes are meaningful."] },
+            { "kind": "structFieldTypeNode", "name": "createdTs", "type": { "kind": "numberTypeNode", "format": "i64", "endian": "le" } },
+            { "kind": "structFieldTypeNode", "name": "expiryTs", "type": { "kind": "numberTypeNode", "format": "i64", "endian": "le" }, "docs": ["Fixed at creation. Never moves."] },
+            { "kind": "structFieldTypeNode", "name": "virtualStock", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Curve reserve in stock base units."] },
+            { "kind": "structFieldTypeNode", "name": "virtualTokens", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Curve token reserve; starts at 1,073,000,000."] },
+            { "kind": "structFieldTypeNode", "name": "supply", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Tokens outstanding."] },
+            { "kind": "structFieldTypeNode", "name": "finalSupply", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Supply frozen at expiry; the payout denominator."] },
+            { "kind": "structFieldTypeNode", "name": "finalVault", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Vault balance frozen at expiry; the payout numerator."] },
+            { "kind": "structFieldTypeNode", "name": "feeBps", "type": { "kind": "numberTypeNode", "format": "u16", "endian": "le" }, "docs": ["Creator's fee on every buy."] },
+            { "kind": "structFieldTypeNode", "name": "sellTaxBps", "type": { "kind": "numberTypeNode", "format": "u16", "endian": "le" }, "docs": ["Tax on sells, left in the vault."] },
+            { "kind": "structFieldTypeNode", "name": "status", "type": { "kind": "definedTypeLinkNode", "name": "status" } },
+            { "kind": "structFieldTypeNode", "name": "nameLen", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" } },
+            { "kind": "structFieldTypeNode", "name": "symbolLen", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" } },
+            { "kind": "structFieldTypeNode", "name": "bump", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" } },
+            { "kind": "structFieldTypeNode", "name": "stockDecimals", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" } },
+            { "kind": "structFieldTypeNode", "name": "reserved", "type": { "kind": "fixedSizeTypeNode", "size": 13, "type": { "kind": "bytesTypeNode" } } }
+          ]
+        }
+      }
+    ],
+    "instructions": [
+      {
+        "kind": "instructionNode",
+        "name": "createNarrative",
+        "docs": ["Create a narrative on a client-built Token-2022 mint: zero supply, no freeze authority, mint authority and permanent delegate set to the narrative PDA. Funds the PDA and pins the vault."],
+        "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }],
+        "accounts": [
+          { "kind": "instructionAccountNode", "name": "creator", "isWritable": true, "isSigner": true, "isOptional": false, "docs": ["Pays rent and takes the buy fee."] },
+          { "kind": "instructionAccountNode", "name": "narrative", "isWritable": true, "isSigner": false, "isOptional": false, "docs": ["PDA [\"narrative\", narrativeMint]."] },
+          { "kind": "instructionAccountNode", "name": "stockMint", "isWritable": false, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrativeMint", "isWritable": false, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "vault", "isWritable": false, "isSigner": false, "isOptional": false, "docs": ["Stock token account owned by the narrative PDA."] },
+          { "kind": "instructionAccountNode", "name": "systemProgram", "isWritable": false, "isSigner": false, "isOptional": false, "defaultValue": { "kind": "publicKeyValueNode", "publicKey": "11111111111111111111111111111111" } },
+          { "kind": "instructionAccountNode", "name": "stockTokenProgram", "isWritable": false, "isSigner": false, "isOptional": false }
+        ],
+        "arguments": [
+          { "kind": "instructionArgumentNode", "name": "discriminator", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "defaultValue": { "kind": "numberValueNode", "number": 0 }, "defaultValueStrategy": "omitted" },
+          { "kind": "instructionArgumentNode", "name": "expiryTs", "type": { "kind": "numberTypeNode", "format": "i64", "endian": "le" }, "docs": ["Unix seconds, between 1 hour and 90 days from now."] },
+          { "kind": "instructionArgumentNode", "name": "virtualStock", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Opening virtual stock reserve, in stock base units."] },
+          { "kind": "instructionArgumentNode", "name": "feeBps", "type": { "kind": "numberTypeNode", "format": "u16", "endian": "le" }, "docs": ["At most 1000."] },
+          { "kind": "instructionArgumentNode", "name": "sellTaxBps", "type": { "kind": "numberTypeNode", "format": "u16", "endian": "le" }, "docs": ["At most 2000."] },
+          { "kind": "instructionArgumentNode", "name": "name", "type": { "kind": "sizePrefixTypeNode", "prefix": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "type": { "kind": "stringTypeNode", "encoding": "utf8" } }, "docs": ["1 to 32 bytes."] },
+          { "kind": "instructionArgumentNode", "name": "symbol", "type": { "kind": "stringTypeNode", "encoding": "utf8" }, "docs": ["1 to 10 bytes; runs to the end of the data."] }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "buy",
+        "docs": ["Mint tokensOut to the buyer for their curve cost plus the creator's fee, paid in the stock. Fails after expiry."],
+        "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }],
+        "accounts": [
+          { "kind": "instructionAccountNode", "name": "buyer", "isWritable": false, "isSigner": true, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrative", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrativeMint", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "buyerTokenAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "buyerStockAccount", "isWritable": true, "isSigner": false, "isOptional": false, "docs": ["Where payment comes from."] },
+          { "kind": "instructionAccountNode", "name": "vault", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "creatorFeeAccount", "isWritable": true, "isSigner": false, "isOptional": false, "docs": ["The creator's stock account; receives the fee."] },
+          { "kind": "instructionAccountNode", "name": "stockMint", "isWritable": false, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "token2022Program", "isWritable": false, "isSigner": false, "isOptional": false, "defaultValue": { "kind": "publicKeyValueNode", "publicKey": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" } },
+          { "kind": "instructionAccountNode", "name": "stockTokenProgram", "isWritable": false, "isSigner": false, "isOptional": false }
+        ],
+        "arguments": [
+          { "kind": "instructionArgumentNode", "name": "discriminator", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "defaultValue": { "kind": "numberValueNode", "number": 1 }, "defaultValueStrategy": "omitted" },
+          { "kind": "instructionArgumentNode", "name": "tokensOut", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Whole tokens; the mint has 0 decimals."] },
+          { "kind": "instructionArgumentNode", "name": "maxStockIn", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Slippage bound in stock base units, cost plus fee."] }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "sell",
+        "docs": ["Burn tokensIn and pay the seller the curve proceeds less the sell tax, which stays in the vault. Fails after expiry."],
+        "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }],
+        "accounts": [
+          { "kind": "instructionAccountNode", "name": "seller", "isWritable": false, "isSigner": true, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrative", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrativeMint", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "sellerTokenAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "sellerStockAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "vault", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "stockMint", "isWritable": false, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "token2022Program", "isWritable": false, "isSigner": false, "isOptional": false, "defaultValue": { "kind": "publicKeyValueNode", "publicKey": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" } },
+          { "kind": "instructionAccountNode", "name": "stockTokenProgram", "isWritable": false, "isSigner": false, "isOptional": false }
+        ],
+        "arguments": [
+          { "kind": "instructionArgumentNode", "name": "discriminator", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "defaultValue": { "kind": "numberValueNode", "number": 2 }, "defaultValueStrategy": "omitted" },
+          { "kind": "instructionArgumentNode", "name": "tokensIn", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" } },
+          { "kind": "instructionArgumentNode", "name": "minStockOut", "type": { "kind": "numberTypeNode", "format": "u64", "endian": "le" }, "docs": ["Slippage bound in stock base units, net of tax."] }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "expire",
+        "docs": ["Permissionless once expiryTs has passed: freezes supply and vault as the payout ratio and revokes the mint authority."],
+        "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }],
+        "accounts": [
+          { "kind": "instructionAccountNode", "name": "narrative", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrativeMint", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "vault", "isWritable": false, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "token2022Program", "isWritable": false, "isSigner": false, "isOptional": false, "defaultValue": { "kind": "publicKeyValueNode", "publicKey": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" } }
+        ],
+        "arguments": [
+          { "kind": "instructionArgumentNode", "name": "discriminator", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "defaultValue": { "kind": "numberValueNode", "number": 3 }, "defaultValueStrategy": "omitted" }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "redeem",
+        "docs": ["After expiry, burn all of the holder's tokens and pay their share of the vault. Never expires."],
+        "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }],
+        "accounts": [
+          { "kind": "instructionAccountNode", "name": "holder", "isWritable": false, "isSigner": true, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrative", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrativeMint", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "holderTokenAccount", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "holderStockAccount", "isWritable": true, "isSigner": false, "isOptional": false, "docs": ["Receives the payout."] },
+          { "kind": "instructionAccountNode", "name": "vault", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "stockMint", "isWritable": false, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "token2022Program", "isWritable": false, "isSigner": false, "isOptional": false, "defaultValue": { "kind": "publicKeyValueNode", "publicKey": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" } },
+          { "kind": "instructionAccountNode", "name": "stockTokenProgram", "isWritable": false, "isSigner": false, "isOptional": false }
+        ],
+        "arguments": [
+          { "kind": "instructionArgumentNode", "name": "discriminator", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "defaultValue": { "kind": "numberValueNode", "number": 4 }, "defaultValueStrategy": "omitted" }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "convert",
+        "docs": ["After expiry, pay one holder out without their signature through the mint's permanent delegate. Permissionless; the payout can only go to the token account's owner."],
+        "discriminators": [{ "kind": "fieldDiscriminatorNode", "name": "discriminator", "offset": 0 }],
+        "accounts": [
+          { "kind": "instructionAccountNode", "name": "narrative", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "narrativeMint", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "holderTokenAccount", "isWritable": true, "isSigner": false, "isOptional": false, "docs": ["Its owner receives the payout."] },
+          { "kind": "instructionAccountNode", "name": "holderStockAccount", "isWritable": true, "isSigner": false, "isOptional": false, "docs": ["A stock account owned by that same holder."] },
+          { "kind": "instructionAccountNode", "name": "vault", "isWritable": true, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "stockMint", "isWritable": false, "isSigner": false, "isOptional": false },
+          { "kind": "instructionAccountNode", "name": "token2022Program", "isWritable": false, "isSigner": false, "isOptional": false, "defaultValue": { "kind": "publicKeyValueNode", "publicKey": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" } },
+          { "kind": "instructionAccountNode", "name": "stockTokenProgram", "isWritable": false, "isSigner": false, "isOptional": false }
+        ],
+        "arguments": [
+          { "kind": "instructionArgumentNode", "name": "discriminator", "type": { "kind": "numberTypeNode", "format": "u8", "endian": "le" }, "defaultValue": { "kind": "numberValueNode", "number": 5 }, "defaultValueStrategy": "omitted" }
+        ]
+      }
+    ],
+    "definedTypes": [
+      {
+        "kind": "definedTypeNode",
+        "name": "status",
+        "docs": ["Lifecycle. There is no path back to live."],
+        "type": {
+          "kind": "enumTypeNode",
+          "size": { "kind": "numberTypeNode", "format": "u8", "endian": "le" },
+          "variants": [
+            { "kind": "enumEmptyVariantTypeNode", "name": "live", "docs": ["Curve trading is open until expiryTs."] },
+            { "kind": "enumEmptyVariantTypeNode", "name": "expired", "docs": ["Trading is over; convert and redeem are the only actions."] },
+            { "kind": "enumEmptyVariantTypeNode", "name": "settled", "docs": ["Every token has been redeemed."] }
+          ]
+        }
+      }
+    ],
+    "errors": [
+      { "kind": "errorNode", "name": "notLive", "code": 0, "message": "The narrative is not accepting curve trades." },
+      { "kind": "errorNode", "name": "notExpired", "code": 1, "message": "The narrative has not been expired yet." },
+      { "kind": "errorNode", "name": "expired", "code": 2, "message": "expiry_ts has already passed." },
+      { "kind": "errorNode", "name": "tooEarly", "code": 3, "message": "expire was called before expiry_ts." },
+      { "kind": "errorNode", "name": "badExpiry", "code": 4, "message": "The requested expiry is outside the permitted window." },
+      { "kind": "errorNode", "name": "badParameters", "code": 5, "message": "Curve parameters or fees are out of range." },
+      { "kind": "errorNode", "name": "zeroAmount", "code": 6, "message": "An amount was zero where it must not be." },
+      { "kind": "errorNode", "name": "mathOverflow", "code": 7, "message": "Arithmetic overflowed or underflowed." },
+      { "kind": "errorNode", "name": "slippageExceeded", "code": 8, "message": "Cost exceeded, or proceeds fell short of, the caller's limit." },
+      { "kind": "errorNode", "name": "nothingToRedeem", "code": 9, "message": "The caller holds no narrative tokens." },
+      { "kind": "errorNode", "name": "invalidPda", "code": 10, "message": "An account did not match its expected PDA." },
+      { "kind": "errorNode", "name": "invalidTokenAccount", "code": 11, "message": "A token account's mint or owner is wrong." },
+      { "kind": "errorNode", "name": "invalidInstructionData", "code": 12, "message": "Instruction data was malformed." },
+      { "kind": "errorNode", "name": "alreadyInitialized", "code": 13, "message": "The account is already initialized." },
+      { "kind": "errorNode", "name": "insufficientSupply", "code": 14, "message": "Selling more tokens than exist on the curve." },
+      { "kind": "errorNode", "name": "soldOut", "code": 15, "message": "The curve has sold every token it will ever sell." }
+    ]
+  },
+  "additionalPrograms": []
+}

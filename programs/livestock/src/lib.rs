@@ -38,6 +38,21 @@ pub const ID: Address = Address::from_str_const("5X7RTCFFLgCpsRiskzm1gBEQmbzBEL3
 
 entrypoint!(process_instruction);
 
+// Embedded security.txt (https://github.com/neodyme-labs/solana-security-txt):
+// how to reach us, read straight out of the deployed binary by explorers.
+#[cfg(not(test))]
+solana_security_txt::security_txt! {
+    name: "Livestock",
+    project_url: "https://livestock.gg",
+    contacts: "link:https://x.com/livestock_gg,link:https://github.com/0xmigi/livestock/security/advisories/new",
+    policy: "https://github.com/0xmigi/livestock/blob/main/SECURITY.md",
+    preferred_languages: "en",
+    source_code: "https://github.com/0xmigi/livestock",
+    source_release: "v0.1.0",
+    auditors: "None",
+    acknowledgements: "Report a vulnerability responsibly and we will credit you here."
+}
+
 /// Instruction discriminators — the first byte of every payload.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]

@@ -10,6 +10,7 @@ crate-type = ["cdylib", "lib"]
 pinocchio = { workspace = true }
 pinocchio-system = { workspace = true }
 pinocchio-token = { workspace = true }
+solana-security-txt = { version = "1.1.3", default-features = false }
 
 # On SBF, `find_program_address` is a syscall. Off-chain (host builds and tests)
 # it needs the curve25519 implementation, pulled in only for non-Solana targets
