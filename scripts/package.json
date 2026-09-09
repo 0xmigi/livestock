@@ -8,7 +8,8 @@
     "swap-buy": "tsx src/swap-buy.ts",
     "keeper": "tsx src/keeper.ts",
     "typecheck": "tsc --noEmit",
-    "files": "tsx src/files.ts"
+    "files": "tsx src/files.ts",
+    "propose-upgrade": "tsx src/propose-upgrade.ts"
   },
   "dependencies": {
     "@nm/client": "workspace:*",
@@ -16,6 +17,8 @@
     "@solana-program/token": "^0.16.1",
     "@solana-program/token-2022": "^0.16.1",
     "@solana/kit": "^8.2.0",
+    "@solana/web3.js": "^1.99.0",
+    "@sqds/multisig": "2.1.4",
     "tsx": "^4.20.7"
   },
   "devDependencies": {

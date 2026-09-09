@@ -37,8 +37,11 @@ if solana program show "$PROGRAM_ID" -u "$MAINNET_RPC_URL" >/dev/null 2>&1; then
     [ "$(stat -f %z "$BIN")" -le "$LEN" ] || echo "!! binary is larger than the program data account ($LEN bytes): the multisig must run 'solana program extend' first"
     BUFFER=$(solana program write-buffer "$BIN" -u "$MAINNET_RPC_URL" -k "$KEYPAIR" --with-compute-unit-price 2000 --max-sign-attempts 30 | awk '/^Buffer/ {print $2}')
     solana program set-buffer-authority "$BUFFER" --new-buffer-authority "$CURRENT" -u "$MAINNET_RPC_URL" -k "$KEYPAIR"
-    echo "== buffer $BUFFER is owned by the vault. In Squads: Developers > Programs > Upgrade, paste the buffer, approve, execute."
-    echo "== then re-run this script only if the IDL or security card changed (they publish below)."
+    echo "== buffer $BUFFER is owned by the vault; proposing the upgrade and approving it as this wallet"
+    MAINNET_RPC_URL="$MAINNET_RPC_URL" KEYPAIR="$KEYPAIR" pnpm --filter @nm/scripts run propose-upgrade -- propose --buffer "$BUFFER" \
+      --memo "livestock $(git describe --tags --always) $(solana-verify get-executable-hash "$BIN" | cut -c1-16)"
+    echo "== approve in Squads to reach the threshold, then execute there or with: pnpm --filter @nm/scripts run propose-upgrade -- execute --index <n>"
+    echo "== re-run this script only if the IDL or security card changed (they publish below)."
     exit 0
   fi
   echo "== $PROGRAM_ID exists on mainnet: upgrading"

@@ -2,7 +2,7 @@
   "name": "livestock",
   "private": true,
   "version": "0.1.0",
-  "description": "Livestock — narrative tokens that expire into tokenized stock",
+  "description": "Livestock \u2014 narrative tokens that expire into tokenized stock",
   "packageManager": "pnpm@11.10.0",
   "scripts": {
     "build:client": "pnpm --filter @nm/client run build",
@@ -11,5 +11,10 @@
     "dev": "pnpm run build:client && pnpm --filter @nm/app dev",
     "build": "pnpm run build:client && pnpm --filter @nm/app build",
     "typecheck": "pnpm -r typecheck"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "bigint-buffer"
+    ]
   }
 }

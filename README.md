@@ -75,6 +75,19 @@ solana-verify build --library-name livestock
 MAINNET_RPC_URL=https://mainnet.helius-rpc.com/?api-key=... scripts/deploy-mainnet.sh
 ```
 
+Upgrades go through the Squads multisig that holds the upgrade authority.
+The same script stages the new binary in a buffer owned by the vault, then
+proposes the upgrade and approves it as the CLI wallet; the second approval
+and the execution happen in the Squads dashboard (or from the CLI once the
+threshold is met):
+
+```bash
+solana-verify build --library-name livestock
+MAINNET_RPC_URL=... scripts/deploy-mainnet.sh                                   # stages, proposes, approves
+MAINNET_RPC_URL=... pnpm --filter @nm/scripts run propose-upgrade -- show --index <n>
+MAINNET_RPC_URL=... pnpm --filter @nm/scripts run propose-upgrade -- execute --index <n>
+```
+
 The IDL (`metadata/livestock.codama.json`, Codama format, since the program is
 Pinocchio and has no Anchor IDL) and the contact card (`metadata/security.json`)
 are written to the Program Metadata program under the `idl` and `security`
