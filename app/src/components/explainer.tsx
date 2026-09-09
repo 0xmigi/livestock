@@ -385,6 +385,7 @@ export function Explainer({ className = "" }: { className?: string }) {
   // from the expiry tick on it stands on the last live point, which scrolls
   // left with everything else.
   const PAD = padFor(size.w);
+  const narrow = size.w > 0 && size.w < 520;
   const plotW = Math.max(0, size.w - PAD.left - PAD.right);
   const fallbackDot = PAD.left + plotW * (1 - HEAD_BUFFER);
   const launchTime = narrative[0]?.time ?? null;
@@ -451,13 +452,17 @@ export function Explainer({ className = "" }: { className?: string }) {
             expiry
           </div>
         ) : null}
+        {/* On a phone the label is shorter and sits a line lower, clear of the "example" tag. */}
         {stopped && expiryX !== null ? (
           <div
-            className="mono pointer-events-none absolute top-0 whitespace-nowrap text-[11px] leading-tight"
-            style={expiryX > size.w - 220 ? { right: size.w - expiryX + 6, textAlign: "right" } : { left: expiryX + 6 }}
+            className="mono pointer-events-none absolute whitespace-nowrap text-[11px] leading-tight"
+            style={{
+              top: narrow ? 14 : 0,
+              ...(expiryX > size.w - 220 ? { right: size.w - expiryX + 6, textAlign: "right" } : { left: expiryX + 6 }),
+            }}
           >
             <span className="block text-neutral-400">expired</span>
-            <span className="block text-neutral-900">all {NARRATIVE} converted to {STOCK}</span>
+            <span className="block text-neutral-900">{narrow ? `converted to ${STOCK}` : `all ${NARRATIVE} converted to ${STOCK}`}</span>
           </div>
         ) : null}
         {/* The narrative's label while it is live, at liveline's own dot. */}
