@@ -18,25 +18,29 @@ import { Liveline, type LivelinePoint, type LivelineSeries } from "liveline";
 
 import { formatUsdCompact } from "@/lib/config";
 import { useStocks } from "@/lib/stocks";
+import {
+  EXPIRY_AT,
+  FEE,
+  LAUNCH_AT,
+  LOOP_SECS,
+  NARRATIVE,
+  POST,
+  RANGE_MAX,
+  RANGE_MIN,
+  rng,
+  SEED,
+  STAKE,
+  step,
+  STOCK,
+  TICK_MS,
+} from "@/lib/story";
 import { useTheme } from "@/lib/theme";
 
-/** One loop, in seconds. */
-const LOOP_SECS = 30;
 /** How far into the loop the page opens, so the chart is never empty. */
 const OPEN_AT = 3;
-/** When the post lands and the narrative launches. */
-const LAUNCH_AT = 6;
-/** When the narrative expires into the stock. */
-const EXPIRY_AT = 21;
-const TICK_MS = 120;
 /** Seconds after launch before the third beat lands. */
 const LAUNCH_BEAT_SECS = 2.5;
 const TICKS = { launch: (LAUNCH_AT * 1000) / TICK_MS, expiry: (EXPIRY_AT * 1000) / TICK_MS, loop: (LOOP_SECS * 1000) / TICK_MS };
-
-/** Same $100 into each, so the two lines are directly comparable. */
-const STAKE = 100;
-/** The creator's fee on every buy, as in the program (FEE_BPS = 100). */
-const FEE = 0.01;
 
 /**
  * The y-range is pinned (see the "range" series) so the overlay can map
@@ -44,8 +48,6 @@ const FEE = 0.01;
  * 12% each side, keeps its live head 1.5% of the window left of the plot's
  * right edge, and uses this padding.
  */
-const RANGE_MIN = 96;
-const RANGE_MAX = 150;
 const RANGE_MARGIN = 0.12;
 const HEAD_BUFFER = 0.015;
 /** The right padding is the future: the expiry line travels through it toward the live head. Less of it on a phone. */
@@ -53,25 +55,6 @@ function padFor(width: number) {
   return { top: 8, right: width > 0 && width < 520 ? 84 : 150, bottom: 4, left: 0 };
 }
 
-const STOCK = "TSLAx";
-const NARRATIVE = "$ROBOTAXI";
-const POST = { name: "Elon Musk", handle: "@elonmusk", text: "Robotaxi nationwide. Soon." };
-
-/**
- * Seeded, so the chart is the same picture every loop. A different chart
- * each time reads as noise; the same one reads as the story.
- */
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const SEED = 12;
 
 type Phase = "before" | "live" | "after";
 
@@ -130,10 +113,6 @@ function phaseAt(tick: number): Phase {
   return "after";
 }
 
-/** A random walk with a drift, in fractions per tick. */
-function step(random: () => number, value: number, drift: number, noise: number): number {
-  return value * (1 + drift + (random() - 0.5) * noise);
-}
 
 export function Explainer({ className = "" }: { className?: string }) {
   const { theme } = useTheme();

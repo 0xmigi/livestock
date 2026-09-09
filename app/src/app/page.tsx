@@ -111,7 +111,7 @@ export default function Markets() {
             </Link>
             <Link
               href="/how-it-works"
-              className="inline-flex items-center gap-1 text-sm text-neutral-600 transition-colors hover:text-neutral-900"
+              className="inline-flex items-center gap-1 text-sm text-neutral-400 transition-colors hover:text-neutral-600"
             >
               How it works
               <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />

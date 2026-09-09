@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Shell } from "@/components/shell";
+import { StepFrame } from "@/components/step-frame";
 
 export const metadata: Metadata = {
   title: "How it works",
@@ -19,21 +20,21 @@ const STEPS = [
   {
     n: "00",
     title: "Pick a narrative",
-    body: "A story about a company: a launch, a ruling, a number. Each one is tied to that company's stock and has an end date. Find one, or make your own.",
+    body: "A story about a company: a launch, a ruling, a number. Find one people are already talking about, and the stock it moves.",
   },
   {
     n: "01",
-    title: "Buy with SOL",
-    body: "Your SOL is swapped for the stock and put in the narrative's vault. You get tokens. The price follows supply: buys push it up, sells push it down.",
+    title: "Launch a token",
+    body: "Name it, pick the stock it converts to, and set the date. One transaction builds the token and its vault. You take 1% of every buy.",
   },
   {
     n: "02",
-    title: "Sell or hold",
-    body: "Sell any time before the date and take stock out of the vault. A 10% exit tax stays behind for whoever holds on.",
+    title: "Buy or sell",
+    body: "Buys are paid in SOL, swapped for the stock and locked in the vault. The price follows supply: buys push it up, sells push it down. Selling before the date costs a 10% exit tax that stays in the vault.",
   },
   {
     n: "03",
-    title: "It becomes the stock",
+    title: "Expire into stock",
     body: "On the date, trading stops. The vault is split across every token and sent to holders. Nothing to claim.",
   },
 ];
@@ -107,13 +108,17 @@ export default function HowItWorks() {
         </div>
 
         <section className="grid gap-2 sm:grid-cols-2">
-          {STEPS.map((s) => (
+          {STEPS.map((s, i) => (
             <div key={s.n} className="rounded bg-neutral-50 p-5">
               <div className="flex items-baseline gap-2">
                 <span className="mono text-xs font-semibold text-accent">{s.n}</span>
                 <span className="text-[15px] font-semibold text-neutral-900">{s.title}</span>
               </div>
               <p className="mt-2.5 text-sm leading-relaxed text-neutral-400">{s.body}</p>
+              {/* The same example as the home page, stopped at this step. */}
+              <div className="mt-5">
+                <StepFrame step={i as 0 | 1 | 2 | 3} />
+              </div>
             </div>
           ))}
         </section>
