@@ -30,3 +30,6 @@ client/dist/
 .uploads/
 .vercel
 .env*
+
+# Stray local pnpm store
+.pnpm-store/
