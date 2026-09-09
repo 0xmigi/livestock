@@ -7,6 +7,11 @@
  *   MAINNET_RPC_URL=... pnpm --filter @nm/scripts run propose-upgrade -- propose --buffer <BUFFER> [--memo "v0.1.1 <hash>"]
  *   MAINNET_RPC_URL=... pnpm --filter @nm/scripts run propose-upgrade -- show --index <N>
  *   MAINNET_RPC_URL=... pnpm --filter @nm/scripts run propose-upgrade -- execute --index <N>
+ *   MAINNET_RPC_URL=... pnpm --filter @nm/scripts run propose-upgrade -- propose-tx --tx <file.b64> [--tx <file.b64>...] [--memo text]
+ *
+ * `propose-tx` wraps any transaction exported with the vault as its signer
+ * (e.g. `program-metadata ... --export <vault>`) into one vault transaction,
+ * so the multisig can run instructions of other programs too.
  *
  * On chain (Squads v4) an upgrade is a vault transaction carrying the BPF
  * loader's Upgrade instruction with the vault as authority, plus a proposal
@@ -31,6 +36,7 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
+import { readFileSync as readFile } from "node:fs";
 
 const PROGRAM_ID = new PublicKey("5X7RTCFFLgCpsRiskzm1gBEQmbzBEL39H6WpN9YzSizB");
 /** The Squads v4 multisig whose vault 0 is the program's upgrade authority. */
@@ -137,6 +143,18 @@ async function propose() {
   const { blockhash } = await connection.getLatestBlockhash();
   const message = new TransactionMessage({ payerKey: vault, recentBlockhash: blockhash, instructions: [upgrade] });
 
+  await proposeMessage(connection, wallet, account, transactionIndex, message, memo);
+}
+
+/** Creates the vault transaction and its proposal, and casts this wallet's approval, in one transaction. */
+async function proposeMessage(
+  connection: Connection,
+  wallet: Keypair,
+  account: Awaited<ReturnType<typeof multisig.accounts.Multisig.fromAccountAddress>>,
+  transactionIndex: bigint,
+  message: TransactionMessage,
+  memo: string,
+) {
   const ixs = [
     multisig.instructions.vaultTransactionCreate({
       multisigPda: MULTISIG,
@@ -156,6 +174,57 @@ async function propose() {
   console.log(`  signature ${signature}`);
   console.log(`  threshold ${account.threshold}: approve and execute the rest at ${dashboard()}`);
   console.log(`  or, once approved: pnpm --filter @nm/scripts run propose-upgrade -- execute --index ${transactionIndex}`);
+}
+
+/** Every `--tx <file>` on the command line. */
+function txFiles(): string[] {
+  return argv.flatMap((a, i) => (a === "--tx" && argv[i + 1] ? [argv[i + 1]] : []));
+}
+
+async function proposeTx() {
+  const files = txFiles();
+  if (files.length === 0) throw new Error("propose-tx needs at least one --tx <base64 file>");
+  const connection = rpc();
+  const wallet = loadKeypair();
+  const [vault] = multisig.getVaultPda({ multisigPda: MULTISIG, index: VAULT_INDEX });
+
+  // Unpack each exported transaction back into instructions. Exports carry no
+  // lookup tables, so every account is in the static key list.
+  const instructions: TransactionInstruction[] = [];
+  for (const file of files) {
+    const raw = readFile(file, "utf8").trim();
+    const tx = VersionedTransaction.deserialize(Buffer.from(raw, "base64"));
+    const msg = tx.message;
+    if (msg.addressTableLookups.length > 0) throw new Error(`${file} uses lookup tables; not supported`);
+    const keys = msg.staticAccountKeys;
+    for (const ci of msg.compiledInstructions) {
+      const programId = keys[ci.programIdIndex];
+      if (programId.equals(ComputeBudgetProgram.programId)) continue; // the vault does not pay priority fees
+      instructions.push(
+        new TransactionInstruction({
+          programId,
+          keys: ci.accountKeyIndexes.map((k) => ({
+            pubkey: keys[k],
+            isSigner: msg.isAccountSigner(k),
+            isWritable: msg.isAccountWritable(k),
+          })),
+          data: Buffer.from(ci.data),
+        }),
+      );
+    }
+  }
+  const signers = new Set(instructions.flatMap((ix) => ix.keys.filter((k) => k.isSigner).map((k) => k.pubkey.toBase58())));
+  for (const s of signers) {
+    if (s !== vault.toBase58()) throw new Error(`instruction needs signer ${s}; only the vault ${vault.toBase58()} can sign here`);
+  }
+
+  const account = await requireMember(connection, wallet.publicKey, Permissions.fromPermissions([multisig.types.Permission.Initiate, multisig.types.Permission.Vote]));
+  const transactionIndex = BigInt(Number(account.transactionIndex) + 1);
+  const { blockhash } = await connection.getLatestBlockhash();
+  const message = new TransactionMessage({ payerKey: vault, recentBlockhash: blockhash, instructions });
+  const memo = arg("memo") ?? `${instructions.length} instruction(s) from ${files.map((f) => f.split("/").pop()).join(", ")}`;
+  console.log(`${instructions.length} instruction(s), programs: ${[...new Set(instructions.map((ix) => ix.programId.toBase58()))].join(", ")}`);
+  await proposeMessage(connection, wallet, account, transactionIndex, message, memo);
 }
 
 async function show() {
@@ -187,9 +256,9 @@ async function execute() {
 }
 
 const command = argv[0];
-const run = { propose, show, execute }[command as "propose" | "show" | "execute"];
+const run = { propose, "propose-tx": proposeTx, show, execute }[command as "propose" | "propose-tx" | "show" | "execute"];
 if (!run) {
-  console.error("usage: propose-upgrade propose --buffer <address> [--memo text] | show --index <n> | execute --index <n>");
+  console.error("usage: propose-upgrade propose --buffer <address> [--memo text] | propose-tx --tx <file.b64>... [--memo text] | show --index <n> | execute --index <n>");
   process.exit(2);
 }
 run().catch((e: unknown) => {
