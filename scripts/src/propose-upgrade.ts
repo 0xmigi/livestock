@@ -101,6 +101,8 @@ async function propose() {
   const [vault] = multisig.getVaultPda({ multisigPda: MULTISIG, index: VAULT_INDEX });
   const [programData] = PublicKey.findProgramAddressSync([PROGRAM_ID.toBytes()], BPF_LOADER);
 
+  const account = await requireMember(connection, wallet.publicKey, Permissions.fromPermissions([multisig.types.Permission.Initiate, multisig.types.Permission.Vote]));
+
   // The vault must own both the program and the buffer, or the upgrade would fail at execution.
   const pd = await connection.getAccountInfo(programData);
   if (!pd) throw new Error("program data account not found");
@@ -113,7 +115,6 @@ async function propose() {
     throw new Error(`buffer authority is ${bufferAuthority?.toBase58() ?? "none"}; run: solana program set-buffer-authority ${buffer} --new-buffer-authority ${vault.toBase58()}`);
   }
 
-  const account = await requireMember(connection, wallet.publicKey, Permissions.fromPermissions([multisig.types.Permission.Initiate, multisig.types.Permission.Vote]));
   const transactionIndex = BigInt(Number(account.transactionIndex) + 1);
 
   // BPF loader `Upgrade`: program data, program, buffer, spill, rent, clock, authority.
