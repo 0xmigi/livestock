@@ -11,6 +11,7 @@ import {
   decodeNarrative,
   getBuyInstruction,
 } from "@nm/client";
+import { findTreasuryStockAccount, TREASURY } from "@nm/client";
 import {
   findAssociatedTokenPda,
   getCreateAssociatedTokenIdempotentInstruction,
@@ -63,11 +64,12 @@ async function main(): Promise<void> {
   );
 
   const cost = buyCost(n, tokensOut);
-  const maxIn = cost + applyBps(cost, n.feeBps);
+  const maxIn = cost + applyBps(cost, n.feeBps) + applyBps(cost, n.protocolFeeBps);
 
   const stockAta = await ata(n.stockMint, buyer, n.stockTokenProgram);
   const tokenAta = await ata(n.narrativeMint, buyer);
   const creatorFee = await ata(n.stockMint, n.creator, n.stockTokenProgram);
+  const [treasury] = await findTreasuryStockAccount(n.stockMint, n.stockTokenProgram);
 
   console.log(`\nbuyer stock ata   ${stockAta}`);
   console.log(`buyer token ata   ${tokenAta}`);
@@ -104,6 +106,13 @@ async function main(): Promise<void> {
             mint: n.stockMint,
             tokenProgram: n.stockTokenProgram,
           }),
+          getCreateAssociatedTokenIdempotentInstruction({
+            payer: createNoopSigner(buyer),
+            ata: treasury,
+            owner: TREASURY,
+            mint: n.stockMint,
+            tokenProgram: n.stockTokenProgram,
+          }),
           getBuyInstruction({
             buyer,
             narrative: narrativeAddress,
@@ -112,6 +121,7 @@ async function main(): Promise<void> {
             buyerStockAccount: stockAta,
             vault: n.vault,
             creatorFeeAccount: creatorFee,
+            treasuryStockAccount: treasury,
             stockMint: n.stockMint,
             stockTokenProgram: n.stockTokenProgram,
             tokensOut,

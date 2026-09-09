@@ -25,7 +25,7 @@ const STEPS = [
   {
     n: "01",
     title: "Launch a token",
-    body: "Name it, pick the stock it converts to, and set the date. One transaction builds the token and its vault. You take 1% of every buy.",
+    body: "Name it, pick the stock it converts to, and set the date. One transaction builds the token and its vault. You take 1% of every buy; the platform takes 0.5%.",
   },
   {
     n: "02",
@@ -56,9 +56,12 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     q: "What are the fees?",
     a: (
       <>
-        The creator takes <strong className="font-medium text-neutral-900">1%</strong> of every buy. Selling before the
-        date costs a <strong className="font-medium text-neutral-900">10%</strong> exit tax. That tax goes to no one. It
-        stays in the vault for the holders left at the end.
+        The creator takes <strong className="font-medium text-neutral-900">1%</strong> of every buy and the platform{" "}
+        <strong className="font-medium text-neutral-900">0.5%</strong>. On the date the platform takes{" "}
+        <strong className="font-medium text-neutral-900">1%</strong> of the vault, which pays for the keeper that
+        converts every holder. Selling before the date costs a{" "}
+        <strong className="font-medium text-neutral-900">10%</strong> exit tax. That tax goes to no one. It stays in
+        the vault for the holders left at the end.
       </>
     ),
   },
@@ -127,8 +130,9 @@ export default function HowItWorks() {
           <div className="mono px-3 pb-2.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
             The numbers
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-4">
             <Fact figure="1%" label="Creator fee" sub="on every buy" />
+            <Fact figure="0.5% + 1%" label="Platform fee" sub="on buys, and of the vault on the date" />
             <Fact figure="10%" label="Exit tax" sub="on sells, stays in the vault" />
             <Fact figure="1h – 2w" label="Lifetime" sub="set at creation" />
           </div>

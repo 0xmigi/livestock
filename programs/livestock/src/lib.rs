@@ -48,7 +48,7 @@ solana_security_txt::security_txt! {
     policy: "https://github.com/0xmigi/livestock/blob/main/SECURITY.md",
     preferred_languages: "en",
     source_code: "https://github.com/0xmigi/livestock",
-    source_release: "v0.1.0",
+    source_release: "v0.2.0",
     auditors: "None",
     acknowledgements: "Report a vulnerability responsibly and we will credit you here."
 }

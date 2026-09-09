@@ -21,6 +21,8 @@ import {
   afterBuy,
   applyBps,
   buyCost,
+  findTreasuryStockAccount,
+  TREASURY,
   formatStock,
   netSellProceeds,
   proRata,
@@ -258,10 +260,11 @@ export function BuyPanel({
   const stockIn = quote?.minStockOut ?? (stockPrice > 0 ? usdToStock(usd || 0, stockPrice, stock.decimals) : 0n);
   const left = remaining(narrative.supply);
   const soldOut = left === 0n;
-  const tokens = tokensForStock(narrative, narrative.supply, stockIn, narrative.feeBps);
+  const tokens = tokensForStock(narrative, narrative.supply, stockIn, narrative.feeBps, narrative.protocolFeeBps);
   const cost = tokens > 0n ? buyCost(narrative, tokens) : 0n;
   const fee = applyBps(cost, narrative.feeBps);
-  const maxIn = cost + fee;
+  const protocolFee = applyBps(cost, narrative.protocolFeeBps);
+  const maxIn = cost + fee + protocolFee;
   const solIn = Number(lamports) / Number(LAMPORTS_PER_SOL);
 
   // Price impact: how far your own buy pushes the marginal price.
@@ -293,6 +296,7 @@ export function BuyPanel({
       TOKEN_2022_PROGRAM,
     );
     const creatorFee = await ataFor(narrative.stockMint, narrative.creator, program);
+    const [treasury] = await findTreasuryStockAccount(narrative.stockMint, program);
 
     // The swap runs first; whatever it delivers above `maxIn` stays in the wallet.
     const swap = await buildSwapLeg(swapStock, owner, quote);
@@ -313,6 +317,13 @@ export function BuyPanel({
         mint: narrative.stockMint,
         tokenProgram: program,
       }),
+      getCreateAssociatedTokenIdempotentInstruction({
+        payer: createNoopSigner(owner),
+        ata: treasury,
+        owner: TREASURY,
+        mint: narrative.stockMint,
+        tokenProgram: program,
+      }),
       getBuyInstruction({
         buyer: owner,
         narrative: narrative.address,
@@ -321,6 +332,7 @@ export function BuyPanel({
         buyerStockAccount: stockAta,
         vault: narrative.vault,
         creatorFeeAccount: creatorFee,
+        treasuryStockAccount: treasury,
         stockMint: narrative.stockMint,
         stockTokenProgram: program,
         tokensOut: tokens,
@@ -486,6 +498,9 @@ export function BuyPanel({
               <Line label="Average per token">{formatUsdAuto(toUsd(avgPerToken))}</Line>
               <Line label={`Creator fee ${(narrative.feeBps / 100).toFixed(1)}%`}>
                 {formatStock(fee, stock.decimals, 6)} {stock.symbol}
+              </Line>
+              <Line label={`Platform fee ${(narrative.protocolFeeBps / 100).toFixed(1)}%`}>
+                {formatStock(protocolFee, stock.decimals, 6)} {stock.symbol}
               </Line>
               <Line label="Price impact">
                 <span className={impactPct >= 5 ? "text-closing" : ""}>

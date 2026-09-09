@@ -50,7 +50,7 @@ the command line, against the dev server:
 BUYER_KEYPAIR=<path to a devnet keypair> SOL=0.05 pnpm --filter @nm/scripts run swap-buy
 ```
 
-Program tests (42, LiteSVM + curve unit tests):
+Program tests (46, LiteSVM + curve unit tests):
 
 ```bash
 cargo build-sbf && cargo test -p livestock

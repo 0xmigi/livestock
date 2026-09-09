@@ -9,7 +9,7 @@ use {
             apply_bps, buy_cost, sell_refund, INITIAL_REAL_TOKEN_RESERVES,
             INITIAL_VIRTUAL_TOKEN_RESERVES,
         },
-        state::{Narrative, Status},
+        state::{Narrative, Status, CONVERSION_FEE_BPS, PROTOCOL_FEE_BPS, TREASURY},
     },
     solana_address::Address,
     solana_keypair::Keypair,
@@ -33,6 +33,8 @@ struct Market {
     narrative_mint: Address,
     vault: Address,
     creator_fee: Address,
+    /// The treasury's stock account: where both protocol fees land.
+    treasury: Address,
 }
 
 /// A live narrative with the default curve, plus the creator's fee account.
@@ -76,6 +78,7 @@ fn setup_with(env: Env) -> Market {
 
     let stock_mint = env.stock_mint;
     let creator_fee = env.create_token_account(&creator_key, &stock_mint);
+    let treasury = env.create_token_account(&TREASURY, &stock_mint);
 
     Market {
         env,
@@ -83,6 +86,7 @@ fn setup_with(env: Env) -> Market {
         narrative_mint,
         vault,
         creator_fee,
+        treasury,
     }
 }
 
@@ -119,6 +123,7 @@ fn buy(m: &mut Market, h: &Holder, tokens: u64) {
         &h.tokens,
         &h.stock,
         &m.creator_fee,
+        &m.treasury,
         &m.narrative,
         &m.vault,
         tokens,
@@ -146,7 +151,7 @@ fn convert(m: &mut Market, h: &Holder) -> Result<(), ()> {
 fn expire(m: &mut Market) {
     m.env.advance_clock(DURATION + 1);
     let payer = m.env.creator.insecure_clone();
-    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault, &m.treasury);
     m.env.send(&[ix], &[&payer]).expect("expire");
 }
 
@@ -218,13 +223,15 @@ fn buying_moves_stock_into_the_vault_and_pays_the_creator() {
 
     let cost = opening_cost(M);
     let fee = apply_bps(cost, FEE_BPS).unwrap();
+    let protocol = apply_bps(cost, PROTOCOL_FEE_BPS).unwrap();
 
     buy(&mut m, &h, M);
 
     assert_eq!(m.env.token_balance(&h.tokens), M);
     assert_eq!(vault_balance(&m), cost);
     assert_eq!(m.env.token_balance(&m.creator_fee), fee);
-    assert_eq!(m.env.token_balance(&h.stock), STOCK_FUNDING - cost - fee);
+    assert_eq!(m.env.token_balance(&m.treasury), protocol);
+    assert_eq!(m.env.token_balance(&h.stock), STOCK_FUNDING - cost - fee - protocol);
     state(&m, |s| {
         assert_eq!(s.supply(), M);
         assert_eq!(s.virtual_stock(), VIRTUAL_STOCK + cost);
@@ -253,7 +260,7 @@ fn buy_respects_the_slippage_limit() {
     let h = holder(&mut m);
 
     let cost = opening_cost(M);
-    let fee = apply_bps(cost, FEE_BPS).unwrap();
+    let fee = apply_bps(cost, FEE_BPS).unwrap() + apply_bps(cost, PROTOCOL_FEE_BPS).unwrap();
     let ix = buy_ix(
         &m.env,
         &m.narrative_mint,
@@ -261,6 +268,7 @@ fn buy_respects_the_slippage_limit() {
         &h.tokens,
         &h.stock,
         &m.creator_fee,
+        &m.treasury,
         &m.narrative,
         &m.vault,
         M,
@@ -284,7 +292,7 @@ fn the_curve_sells_out_at_the_real_reserve() {
     // Two more is one too many.
     let ix = buy_ix(
         &m.env, &m.narrative_mint, &whale.wallet.pubkey(), &whale.tokens, &whale.stock,
-        &m.creator_fee, &m.narrative, &m.vault, 2, u64::MAX,
+        &m.creator_fee, &m.treasury, &m.narrative, &m.vault, 2, u64::MAX,
     );
     assert!(m.env.send(&[ix], &[&whale.wallet]).is_err(), "cannot buy past the reserve");
 
@@ -300,7 +308,7 @@ fn the_curve_sells_out_at_the_real_reserve() {
     });
     let ix = buy_ix(
         &m.env, &m.narrative_mint, &whale.wallet.pubkey(), &whale.tokens, &whale.stock,
-        &m.creator_fee, &m.narrative, &m.vault, 1, u64::MAX,
+        &m.creator_fee, &m.treasury, &m.narrative, &m.vault, 1, u64::MAX,
     );
     assert!(m.env.send(&[ix], &[&whale.wallet]).is_err(), "sold out");
 
@@ -389,14 +397,14 @@ fn nobody_can_expire_early_including_the_creator() {
     buy(&mut m, &h, 100);
 
     let creator = m.env.creator.insecure_clone();
-    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault, &m.treasury);
     assert!(
         m.env.send(&[ix], &[&creator]).is_err(),
         "the creator must have no privilege to expire early",
     );
 
     let stranger = m.env.new_wallet(SOL);
-    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault, &m.treasury);
     assert!(m.env.send(&[ix], &[&stranger]).is_err());
 }
 
@@ -408,7 +416,7 @@ fn anyone_can_expire_once_the_date_passes() {
 
     m.env.advance_clock(DURATION + 1);
     let stranger = m.env.new_wallet(SOL);
-    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault);
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault, &m.treasury);
     m.env.send(&[ix], &[&stranger]).expect("permissionless");
 
     state(&m, |s| assert_eq!(s.status().unwrap(), Status::Expired));
@@ -429,6 +437,7 @@ fn trading_stops_at_expiry_even_before_expire_is_called() {
         &h.tokens,
         &h.stock,
         &m.creator_fee,
+        &m.treasury,
         &m.narrative,
         &m.vault,
         10,
@@ -460,12 +469,16 @@ fn expiry_freezes_the_numbers_and_revokes_the_mint_authority() {
     assert!(m.env.mint_has_authority(&mint));
 
     let vault_at_expiry = vault_balance(&m);
+    let treasury_before = m.env.token_balance(&m.treasury);
+    let conversion_fee = apply_bps(vault_at_expiry, CONVERSION_FEE_BPS).unwrap();
     expire(&mut m);
 
     state(&m, |s| {
         assert_eq!(s.final_supply(), 1_000);
-        assert_eq!(s.final_vault(), vault_at_expiry);
+        assert_eq!(s.final_vault(), vault_at_expiry - conversion_fee);
     });
+    assert_eq!(vault_balance(&m), vault_at_expiry - conversion_fee);
+    assert_eq!(m.env.token_balance(&m.treasury) - treasury_before, conversion_fee);
     assert!(
         !m.env.mint_has_authority(&mint),
         "an expired narrative must never mint again",
@@ -584,7 +597,7 @@ fn an_early_buyer_redeems_more_stock_than_they_paid() {
     let early = holder(&mut m);
 
     let paid = opening_cost(10 * M);
-    let fee = apply_bps(paid, FEE_BPS).unwrap();
+    let fee = apply_bps(paid, FEE_BPS).unwrap() + apply_bps(paid, PROTOCOL_FEE_BPS).unwrap();
     buy(&mut m, &early, 10 * M);
 
     // The narrative takes off after them.
@@ -659,7 +672,11 @@ fn the_creator_cannot_drain_the_vault() {
     );
     assert!(m.env.send(&[ix], &[&creator]).is_err());
 
-    assert_eq!(vault_balance(&m), vault_before);
+    // Only the conversion fee left the vault, and it went to the treasury,
+    // not to the creator.
+    let fee = apply_bps(vault_before, CONVERSION_FEE_BPS).unwrap();
+    assert_eq!(vault_balance(&m), vault_before - fee);
+    assert_eq!(m.env.token_balance(&creator_tokens), 0);
 }
 
 // --- the whole loop -------------------------------------------------------
@@ -727,6 +744,7 @@ fn the_full_lifecycle_works_with_a_token_2022_stock() {
     buy(&mut m, &a, 2_000);
     assert_eq!(vault_balance(&m), cost);
     assert_eq!(m.env.token_balance(&m.creator_fee), fee);
+    assert_eq!(m.env.token_balance(&m.treasury), apply_bps(cost, PROTOCOL_FEE_BPS).unwrap());
 
     buy(&mut m, &b, 3_000);
     state(&m, |s| {
@@ -927,4 +945,74 @@ fn a_mint_whose_delegate_is_not_the_narrative_is_rejected() {
         );
         assert!(env.send(&[ix], &[&creator]).is_err());
     }
+}
+
+// --- protocol fees --------------------------------------------------------
+
+#[test]
+fn the_protocol_fees_are_pinned_at_creation() {
+    let m = setup();
+    state(&m, |s| {
+        assert_eq!(s.protocol_fee_bps(), PROTOCOL_FEE_BPS);
+        assert_eq!(s.conversion_fee_bps(), CONVERSION_FEE_BPS);
+    });
+}
+
+/// The buy fee can only land in the treasury's own account for the stock:
+/// any other account, even one for the right mint, is refused.
+#[test]
+fn a_buy_that_routes_the_protocol_fee_elsewhere_is_rejected() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    let stock_mint = m.env.stock_mint;
+    let elsewhere = m.env.create_token_account(&h.wallet.pubkey(), &stock_mint);
+
+    let ix = buy_ix(
+        &m.env, &m.narrative_mint, &h.wallet.pubkey(), &h.tokens, &h.stock,
+        &m.creator_fee, &elsewhere, &m.narrative, &m.vault, M, u64::MAX,
+    );
+    assert!(m.env.send(&[ix], &[&h.wallet]).is_err(), "fee must go to the treasury");
+    assert_eq!(m.env.token_balance(&elsewhere), 0);
+}
+
+/// At expiry the conversion fee leaves the vault once, and every holder's
+/// share is computed from what remains.
+#[test]
+fn expiry_takes_the_conversion_fee_and_pays_out_the_rest() {
+    let mut m = setup();
+    let a = holder(&mut m);
+    let b = holder(&mut m);
+    buy(&mut m, &a, 3 * M);
+    buy(&mut m, &b, M);
+
+    let vault_before = vault_balance(&m);
+    let treasury_before = m.env.token_balance(&m.treasury);
+    let fee = apply_bps(vault_before, CONVERSION_FEE_BPS).unwrap();
+    assert!(fee > 0);
+
+    expire(&mut m);
+
+    assert_eq!(m.env.token_balance(&m.treasury) - treasury_before, fee);
+    let pot = state(&m, |s| s.final_vault());
+    assert_eq!(pot, vault_before - fee);
+
+    convert(&mut m, &a).expect("convert A");
+    convert(&mut m, &b).expect("convert B");
+    assert_eq!(vault_balance(&m), 0, "the remainder is paid out in full");
+    state(&m, |s| assert_eq!(s.status().unwrap(), Status::Settled));
+}
+
+#[test]
+fn an_expiry_that_routes_the_conversion_fee_elsewhere_is_rejected() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    buy(&mut m, &h, M);
+    let stock_mint = m.env.stock_mint;
+    let elsewhere = m.env.create_token_account(&h.wallet.pubkey(), &stock_mint);
+
+    m.env.advance_clock(DURATION + 1);
+    let payer = m.env.creator.insecure_clone();
+    let ix = expire_ix(&m.env, &m.narrative_mint, &m.narrative, &m.vault, &elsewhere);
+    assert!(m.env.send(&[ix], &[&payer]).is_err(), "fee must go to the treasury");
+    state(&m, |s| assert_eq!(s.status().unwrap(), Status::Live));
 }

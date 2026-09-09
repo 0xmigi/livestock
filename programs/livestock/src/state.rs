@@ -55,12 +55,24 @@ pub const MAX_FEE_BPS: u16 = 1_000;
 /// Ceiling on the sell tax (20%).
 pub const MAX_SELL_TAX_BPS: u16 = 2_000;
 
+/// Where protocol fees land: the Squads vault that also holds the upgrade
+/// authority, so revenue and control sit behind the same multisig. Fees are
+/// paid in the stock, into this address's token account for that stock.
+pub const TREASURY: Address =
+    Address::from_str_const("3RgUivJM3F7jfN5mT5Hop6i71LPLU8JEi7cG3b9Fhm8S");
+/// Protocol fee on every buy, beside the creator's: 0.5% of the curve cost.
+pub const PROTOCOL_FEE_BPS: u16 = 50;
+/// Protocol fee at expiry: 1% of the vault, taken once, before the payout
+/// ratio is frozen. Pays for the keeper that converts every holder.
+pub const CONVERSION_FEE_BPS: u16 = 100;
+
 const DISCRIMINATOR: u8 = 1;
 /// Bumped when the payload layout changes. The account size has never
 /// changed, so without checking this an old account would decode silently
 /// into the wrong fields rather than being rejected. v3 replaced the linear
-/// curve's `base_price` and `slope` with the pump.fun curve's two reserves.
-const VERSION: u8 = 3;
+/// curve's `base_price` and `slope` with the pump.fun curve's two reserves;
+/// v4 records the protocol's two fee rates in what was reserved space.
+const VERSION: u8 = 4;
 const HEADER: usize = 2;
 
 /// Lifecycle. There is no path back to `Live`.
@@ -126,7 +138,11 @@ pub struct Narrative {
     pub bump: u8,
     /// Decimals of the stock mint, needed for `TransferChecked`.
     pub stock_decimals: u8,
-    pub _reserved: [u8; 13],
+    /// Protocol fee on buys, pinned at creation like every other rule.
+    protocol_fee_bps: [u8; 2],
+    /// Protocol fee on the vault at expiry, pinned at creation.
+    conversion_fee_bps: [u8; 2],
+    pub _reserved: [u8; 9],
 }
 
 /// Total account size including the 2-byte header.
@@ -236,10 +252,12 @@ impl Narrative {
         self.final_vault = 0u64.to_le_bytes();
         self.fee_bps = fee_bps.to_le_bytes();
         self.sell_tax_bps = sell_tax_bps.to_le_bytes();
+        self.protocol_fee_bps = PROTOCOL_FEE_BPS.to_le_bytes();
+        self.conversion_fee_bps = CONVERSION_FEE_BPS.to_le_bytes();
         self.status = Status::Live as u8;
         self.stock_decimals = stock_decimals;
         self.bump = bump;
-        self._reserved = [0u8; 13];
+        self._reserved = [0u8; 9];
         Ok(())
     }
 
@@ -298,6 +316,14 @@ impl Narrative {
 
     pub fn sell_tax_bps(&self) -> u16 {
         u16::from_le_bytes(self.sell_tax_bps)
+    }
+
+    pub fn protocol_fee_bps(&self) -> u16 {
+        u16::from_le_bytes(self.protocol_fee_bps)
+    }
+
+    pub fn conversion_fee_bps(&self) -> u16 {
+        u16::from_le_bytes(self.conversion_fee_bps)
     }
 
     /// Records a buy: `amount` tokens left the curve for `cost` stock.

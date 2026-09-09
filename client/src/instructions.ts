@@ -137,13 +137,15 @@ export type BuyInput = {
   /** The buyer's stock account — where payment comes from. */
   buyerStockAccount: Address;
   vault: Address;
-  /** The creator's stock account — receives the fee. */
+  /** The creator's stock account — receives the creator fee. */
   creatorFeeAccount: Address;
+  /** The treasury's stock account — receives the protocol fee. See `findTreasuryStockAccount`. */
+  treasuryStockAccount: Address;
   stockMint: Address;
   stockTokenProgram: Address;
   /** Tokens to mint. Narrative mints have 0 decimals. */
   tokensOut: bigint;
-  /** Slippage bound, in stock base units, curve cost plus fee. */
+  /** Slippage bound, in stock base units: curve cost plus both fees. */
   maxStockIn: bigint;
 };
 
@@ -158,6 +160,7 @@ export function getBuyInstruction(input: BuyInput): Instruction {
       w(input.buyerStockAccount),
       w(input.vault),
       w(input.creatorFeeAccount),
+      w(input.treasuryStockAccount),
       r(input.stockMint),
       r(NARRATIVE_TOKEN_PROGRAM_ID),
       r(input.stockTokenProgram),
@@ -210,17 +213,27 @@ export type ExpireInput = {
   narrative: Address;
   narrativeMint: Address;
   vault: Address;
+  stockMint: Address;
+  /** The treasury's stock account — receives the conversion fee. Must exist. */
+  treasuryStockAccount: Address;
+  stockTokenProgram: Address;
 };
 
-/** Permissionless once the expiry date has passed. Needs no signer. */
+/**
+ * Permissionless once the expiry date has passed. Needs no signer. Takes the
+ * protocol's conversion fee out of the vault before freezing the payout ratio.
+ */
 export function getExpireInstruction(input: ExpireInput): Instruction {
   return {
     programAddress: NARRATIVE_MARKETS_PROGRAM_ID,
     accounts: [
       w(input.narrative),
       w(input.narrativeMint),
-      r(input.vault),
+      w(input.vault),
+      r(input.stockMint),
+      w(input.treasuryStockAccount),
       r(NARRATIVE_TOKEN_PROGRAM_ID),
+      r(input.stockTokenProgram),
     ],
     data: encode(NarrativeInstruction.Expire),
   };

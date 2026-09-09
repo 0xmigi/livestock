@@ -20,6 +20,8 @@ import {
   getNarrativeMintSize,
   initialVirtualStock,
   openingState,
+  CONVERSION_FEE_BPS,
+  PROTOCOL_FEE_BPS,
   spotPrice,
   TOKEN_TOTAL_SUPPLY,
 } from "@nm/client";
@@ -674,6 +676,8 @@ export default function Create() {
                   <Term label="On the curve">793,100,000</Term>
                   <Term label="Decimals">0, whole tokens only</Term>
                   <Term label="Your fee on every buy">{FEE_BPS / 100}%</Term>
+                  <Term label="Platform fee on every buy">{PROTOCOL_FEE_BPS / 100}%</Term>
+                  <Term label="Platform fee at conversion">{CONVERSION_FEE_BPS / 100}% of the vault</Term>
                   <Term label="Exit tax, kept for holders who stay">{SELL_TAX_BPS / 100}%</Term>
                 </dl>
               </div>
@@ -708,7 +712,7 @@ export default function Create() {
                   value={compact(toUsd(openingPrice * Number(TOKEN_TOTAL_SUPPLY)))}
                   sub={`${formatUsdAuto(toUsd(openingPrice))} per token`}
                 />
-                <Tile label="Your fee" value={`${(FEE_BPS / 100).toFixed(2)}%`} sub="on every buy" />
+                <Tile label="Your fee" value={`${(FEE_BPS / 100).toFixed(2)}%`} sub={`on every buy, beside the platform\'s ${PROTOCOL_FEE_BPS / 100}%`} />
                 <Tile label="Exit tax" value={`${SELL_TAX_BPS / 100}%`} sub="kept in the vault" />
                 <Tile label="Curve" value="pump.fun" sub="1B supply, 793.1M on the curve" />
               </Overview>
@@ -743,6 +747,7 @@ export default function Create() {
               {stock && virtualStock > 0n ? compact(toUsd(openingPrice * Number(TOKEN_TOTAL_SUPPLY))) : "—"}
             </Summary>
             <Summary label="Your fee">{(FEE_BPS / 100).toFixed(2)}% on every buy</Summary>
+            <Summary label="Platform fee">{PROTOCOL_FEE_BPS / 100}% on buys, {CONVERSION_FEE_BPS / 100}% at conversion</Summary>
             <Summary label="Exit tax">{SELL_TAX_BPS / 100}% kept in the vault</Summary>
             <Summary label="Curve">pump.fun, 1B supply</Summary>
           </dl>

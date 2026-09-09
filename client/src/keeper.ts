@@ -21,6 +21,7 @@ import {
 
 import { decodeNarrative, NARRATIVE_ACCOUNT_LEN, NARRATIVE_DISCRIMINATOR, Status, type Narrative } from "./accounts.ts";
 import { getConvertInstruction, getExpireInstruction } from "./instructions.ts";
+import { findTreasuryStockAccount, TREASURY } from "./pdas.ts";
 import { findNarrative, NARRATIVE_MARKETS_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "./pdas.ts";
 
 /** Holders paid per transaction. Each convert touches eight accounts. */
@@ -124,13 +125,32 @@ export async function planKeeperPass(rpc: Rpc<SolanaRpcApi>, nowSeconds: number)
   return plan;
 }
 
-/** The instructions for one `expire`. */
-export function expireInstructions(entry: { address: Address; narrative: Narrative }): Instruction[] {
+/**
+ * The instructions for one `expire`: the treasury's stock account is created
+ * if missing (the payer covers rent, once per stock), then the narrative is
+ * expired, which pays the conversion fee into it.
+ */
+export async function expireInstructions(
+  payer: TransactionSigner,
+  entry: { address: Address; narrative: Narrative },
+): Promise<Instruction[]> {
+  const n = entry.narrative;
+  const [treasury] = await findTreasuryStockAccount(n.stockMint, n.stockTokenProgram);
   return [
+    getCreateAssociatedTokenIdempotentInstruction({
+      payer,
+      ata: treasury,
+      owner: TREASURY,
+      mint: n.stockMint,
+      tokenProgram: n.stockTokenProgram,
+    }),
     getExpireInstruction({
       narrative: entry.address,
-      narrativeMint: entry.narrative.narrativeMint,
-      vault: entry.narrative.vault,
+      narrativeMint: n.narrativeMint,
+      vault: n.vault,
+      stockMint: n.stockMint,
+      treasuryStockAccount: treasury,
+      stockTokenProgram: n.stockTokenProgram,
     }),
   ];
 }

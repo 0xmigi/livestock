@@ -76,7 +76,7 @@ async function pass(payer: KeyPairSigner): Promise<void> {
 
   for (const entry of plan.toExpire) {
     try {
-      const sig = await send(payer, expireInstructions(entry));
+      const sig = await send(payer, await expireInstructions(payer, entry));
       console.log(`${stamp()} expired   ${entry.narrative.name} (${entry.address})  ${sig}`);
     } catch (cause) {
       console.log(`${stamp()} expire failed for ${entry.narrative.name}: ${cause instanceof Error ? cause.message : cause}`);

@@ -25,6 +25,7 @@ import {
   tokensForStock,
   type Narrative,
 } from "@nm/client";
+import { findTreasuryStockAccount, TREASURY } from "@nm/client";
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
   findAssociatedTokenPda,
@@ -119,9 +120,9 @@ async function main(): Promise<void> {
   console.log(`quote      ${sol} SOL ($${(sol * quote.solUsd).toFixed(2)}) -> ${stockOut} units of stock at $${quote.stockUsd.toFixed(2)}`);
 
   // 2. Size the buy from what the swap delivers.
-  const tokens = tokensForStock(narrative, narrative.supply, stockOut, narrative.feeBps);
+  const tokens = tokensForStock(narrative, narrative.supply, stockOut, narrative.feeBps, narrative.protocolFeeBps);
   const cost = buyCost(narrative, tokens);
-  const maxIn = cost + applyBps(cost, narrative.feeBps);
+  const maxIn = cost + applyBps(cost, narrative.feeBps) + applyBps(cost, narrative.protocolFeeBps);
   console.log(`buy        ${tokens} ${narrative.symbol}, spending up to ${maxIn} stock units`);
   if (tokens === 0n) throw new Error("that much SOL does not buy one token");
 
@@ -130,6 +131,7 @@ async function main(): Promise<void> {
   const buyerStock = await ata(narrative.stockMint, buyer.address, program);
   const buyerTokens = await ata(narrative.narrativeMint, buyer.address, TOKEN_2022_PROGRAM_ID);
   const creatorFee = await ata(narrative.stockMint, narrative.creator, program);
+  const [treasury] = await findTreasuryStockAccount(narrative.stockMint, program);
 
   const instructions: Instruction[] = [
     getTransferSolInstruction({ source: createNoopSigner(buyer.address), destination: faucet, amount: lamports }),
@@ -165,6 +167,13 @@ async function main(): Promise<void> {
       mint: narrative.stockMint,
       tokenProgram: program,
     }),
+    getCreateAssociatedTokenIdempotentInstruction({
+      payer: createNoopSigner(buyer.address),
+      ata: treasury,
+      owner: TREASURY,
+      mint: narrative.stockMint,
+      tokenProgram: program,
+    }),
     getBuyInstruction({
       buyer: buyer.address,
       narrative: narrativeAddress,
@@ -173,6 +182,7 @@ async function main(): Promise<void> {
       buyerStockAccount: buyerStock,
       vault: narrative.vault,
       creatorFeeAccount: creatorFee,
+      treasuryStockAccount: treasury,
       stockMint: narrative.stockMint,
       stockTokenProgram: program,
       tokensOut: tokens,

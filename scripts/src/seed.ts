@@ -28,6 +28,7 @@ import {
   initialVirtualStock,
   openingState,
 } from "@nm/client";
+import { findTreasuryStockAccount, PROTOCOL_FEE_BPS, TREASURY } from "@nm/client";
 import {
   findAssociatedTokenPda,
   getCreateAssociatedTokenIdempotentInstruction,
@@ -215,7 +216,7 @@ async function main(): Promise<void> {
     if (spec.buy > 0) {
       const tokens = BigInt(spec.buy);
       const cost = buyCost(openingState(virtualStock), tokens);
-      const total = cost + applyBps(cost, 100);
+      const total = cost + applyBps(cost, 100) + applyBps(cost, PROTOCOL_FEE_BPS);
 
       const stockAta = await ata(stockMint, signer.address, stockTokenProgram);
       const tokenAta = await ata(
@@ -224,6 +225,7 @@ async function main(): Promise<void> {
         TOKEN_2022_PROGRAM_ADDRESS,
       );
       const creatorFee = stockAta;
+      const [treasury] = await findTreasuryStockAccount(stockMint, stockTokenProgram);
 
       await send(signer, [
         getCreateAssociatedTokenIdempotentInstruction({
@@ -233,6 +235,13 @@ async function main(): Promise<void> {
           mint: narrativeMint,
           tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
         }),
+        getCreateAssociatedTokenIdempotentInstruction({
+          payer: signer,
+          ata: treasury,
+          owner: TREASURY,
+          mint: stockMint,
+          tokenProgram: stockTokenProgram,
+        }),
         getBuyInstruction({
           buyer: signer.address,
           narrative,
@@ -241,6 +250,7 @@ async function main(): Promise<void> {
           buyerStockAccount: stockAta,
           vault,
           creatorFeeAccount: creatorFee,
+          treasuryStockAccount: treasury,
           stockMint,
           stockTokenProgram,
           tokensOut: tokens,

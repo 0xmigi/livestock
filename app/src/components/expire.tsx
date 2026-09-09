@@ -10,8 +10,9 @@
 
 import { useState } from "react";
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
-import { getExpireInstruction } from "@nm/client";
-import type { Address } from "@solana/kit";
+import { findTreasuryStockAccount, getExpireInstruction, TREASURY } from "@nm/client";
+import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token-2022";
+import { createNoopSigner, type Address } from "@solana/kit";
 
 import { SOLANA_CHAIN } from "@/lib/config";
 import type { NarrativeRow } from "@/lib/narratives";
@@ -46,13 +47,25 @@ export function ExpireButton({
     setError(null);
 
     try {
+      // The conversion fee lands in the treasury's account for this stock; make sure it exists.
+      const [treasury] = await findTreasuryStockAccount(narrative.stockMint, narrative.stockTokenProgram);
       await signAndSend(
         owner,
         [
+          getCreateAssociatedTokenIdempotentInstruction({
+            payer: createNoopSigner(owner),
+            ata: treasury,
+            owner: TREASURY,
+            mint: narrative.stockMint,
+            tokenProgram: narrative.stockTokenProgram,
+          }),
           getExpireInstruction({
             narrative: narrative.address,
             narrativeMint: narrative.narrativeMint,
             vault: narrative.vault,
+            stockMint: narrative.stockMint,
+            treasuryStockAccount: treasury,
+            stockTokenProgram: narrative.stockTokenProgram,
           }),
         ],
         async (transaction) => {

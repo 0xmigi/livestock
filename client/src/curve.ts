@@ -143,14 +143,18 @@ export function applyBps(value: bigint, bps: number): bigint {
   return (value * BigInt(bps)) / BPS_DENOMINATOR;
 }
 
-/** Total stock a buyer parts with for `amount` tokens: curve cost plus fee. */
+/**
+ * Total stock a buyer parts with for `amount` tokens: curve cost plus the
+ * creator's fee plus the protocol's, each rounded the way the program does.
+ */
 export function totalBuyCost(
   state: CurveState,
   amount: bigint,
   feeBps: number,
+  protocolFeeBps = 0,
 ): bigint {
   const cost = buyCost(state, amount);
-  return cost + applyBps(cost, feeBps);
+  return cost + applyBps(cost, feeBps) + applyBps(cost, protocolFeeBps);
 }
 
 /** Stock a seller receives for `amount` tokens, after the tax. */
@@ -177,17 +181,18 @@ export function tokensForStock(
   supply: bigint,
   stockIn: bigint,
   feeBps: number,
+  protocolFeeBps = 0,
 ): bigint {
   const cap = remaining(supply);
   if (stockIn <= 0n || cap === 0n) return 0n;
-  if (totalBuyCost(state, 1n, feeBps) > stockIn) return 0n;
-  if (totalBuyCost(state, cap, feeBps) <= stockIn) return cap;
+  if (totalBuyCost(state, 1n, feeBps, protocolFeeBps) > stockIn) return 0n;
+  if (totalBuyCost(state, cap, feeBps, protocolFeeBps) <= stockIn) return cap;
 
   let low = 1n;
   let high = cap;
   while (low < high - 1n) {
     const mid = (low + high) / 2n;
-    if (totalBuyCost(state, mid, feeBps) <= stockIn) {
+    if (totalBuyCost(state, mid, feeBps, protocolFeeBps) <= stockIn) {
       low = mid;
     } else {
       high = mid;

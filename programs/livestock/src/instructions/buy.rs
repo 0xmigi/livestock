@@ -36,10 +36,11 @@ const NARRATIVE: usize = 1;
 /// 3. `[writable]` buyer's narrative token account
 /// 4. `[writable]` buyer's stock token account — the source of payment
 /// 5. `[writable]` vault token account
-/// 6. `[writable]` creator's stock token account — receives the fee
-/// 7. `[]` stock mint
-/// 8. `[]` narrative token program — Token-2022
-/// 9. `[]` stock token program
+/// 6. `[writable]` creator's stock token account — receives the creator fee
+/// 7. `[writable]` treasury's stock token account — receives the protocol fee
+/// 8. `[]` stock mint
+/// 9. `[]` narrative token program — Token-2022
+/// 10. `[]` stock token program
 pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
     let tokens_out = read_u64(data, 0)?;
     let max_stock_in = read_u64(data, 8)?;
@@ -51,7 +52,7 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
     let now = Clock::get()?.unix_timestamp;
 
     let cost = {
-        let [buyer, narrative, narrative_mint, buyer_tokens, buyer_stock, vault, creator_fee, stock_mint, token_program, stock_token_program, ..] =
+        let [buyer, narrative, narrative_mint, buyer_tokens, buyer_stock, vault, creator_fee, treasury_fee, stock_mint, token_program, stock_token_program, ..] =
             &*accounts
         else {
             return Err(ProgramError::NotEnoughAccountKeys);
@@ -87,7 +88,11 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         }
         let cost = buy_cost(state.virtual_stock(), state.virtual_tokens(), tokens_out)?;
         let fee = apply_bps(cost, state.fee_bps())?;
-        let total = cost.checked_add(fee).ok_or(MarketError::MathOverflow)?;
+        let protocol_fee = apply_bps(cost, state.protocol_fee_bps())?;
+        let total = cost
+            .checked_add(fee)
+            .and_then(|t| t.checked_add(protocol_fee))
+            .ok_or(MarketError::MathOverflow)?;
 
         if total > max_stock_in {
             return Err(MarketError::SlippageExceeded.into());
@@ -110,6 +115,15 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
                 &state.stock_mint,
             )?;
         }
+        // The protocol's cut can only go to the treasury's own account.
+        if protocol_fee > 0 {
+            token_balance_checked(
+                treasury_fee,
+                &state.stock_token_program,
+                &state.stock_mint,
+                &TREASURY,
+            )?;
+        }
 
         let bump = state.bump;
         let decimals = state.stock_decimals;
@@ -123,6 +137,10 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
             .invoke_with_program(&stock_program)?;
         if fee > 0 {
             TransferChecked::new(buyer_stock, stock_mint, creator_fee, buyer, fee, decimals)
+                .invoke_with_program(&stock_program)?;
+        }
+        if protocol_fee > 0 {
+            TransferChecked::new(buyer_stock, stock_mint, treasury_fee, buyer, protocol_fee, decimals)
                 .invoke_with_program(&stock_program)?;
         }
 

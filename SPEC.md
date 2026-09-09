@@ -604,9 +604,13 @@ and client are identical to mainnet and only the addresses change.
 2. **Is a sell side needed at all in v1?** Removing it is simpler and makes the
    "it converts by default" story absolute — but a two-week lock with no exit is
    a real objection from both users and investors.
-3. **Creator fee vs protocol fee split.** Currently the spec sends the whole buy
-   fee to the creator, which maximises the incentive to launch. There is no
-   protocol revenue in v1.
+3. **Creator fee vs protocol fee split.** Resolved in v0.2 (2026-09-09): the
+   creator keeps their 1% of every buy, the protocol takes a further 0.5% of
+   every buy and 1% of the vault at expiry (before the payout ratio is frozen;
+   it pays for the keeper). Both rates are program constants recorded on each
+   narrative at creation, and both are paid in the stock into the treasury's
+   token account, the Squads vault that also holds the upgrade authority.
+   The exit tax stays with holders.
 4. **Metadata permanence.** Blob is plain HTTPS, which is what launchpads do,
    but the image and JSON live on our account. Decide whether to mirror to a
    permanent store before mainnet.

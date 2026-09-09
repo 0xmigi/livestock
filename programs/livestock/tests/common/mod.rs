@@ -364,6 +364,7 @@ pub fn buy_ix(
     buyer_tokens: &Address,
     buyer_stock: &Address,
     creator_fee: &Address,
+    treasury_fee: &Address,
     narrative: &Address,
     vault: &Address,
     tokens_out: u64,
@@ -383,6 +384,7 @@ pub fn buy_ix(
             AccountMeta::new(*buyer_stock, false),
             AccountMeta::new(*vault, false),
             AccountMeta::new(*creator_fee, false),
+            AccountMeta::new(*treasury_fee, false),
             AccountMeta::new_readonly(env.stock_mint, false),
             AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
             AccountMeta::new_readonly(env.stock_program, false),
@@ -429,14 +431,18 @@ pub fn expire_ix(
     narrative_mint: &Address,
     narrative: &Address,
     vault: &Address,
+    treasury_fee: &Address,
 ) -> Instruction {
     Instruction {
         program_id: livestock::ID,
         accounts: vec![
             AccountMeta::new(*narrative, false),
             AccountMeta::new(*narrative_mint, false),
-            AccountMeta::new_readonly(*vault, false),
+            AccountMeta::new(*vault, false),
+            AccountMeta::new_readonly(env.stock_mint, false),
+            AccountMeta::new(*treasury_fee, false),
             AccountMeta::new_readonly(NARRATIVE_TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(env.stock_program, false),
         ],
         data: vec![3u8],
     }

@@ -16,9 +16,9 @@ export const NARRATIVE_DISCRIMINATOR = 1;
  * Layout version. The account size has never changed, so without checking
  * this an older account decodes into the wrong fields instead of being
  * rejected. v3 replaced the linear curve's parameters with the pump.fun
- * curve's two reserves.
+ * curve's two reserves; v4 records the protocol's two fee rates.
  */
-export const NARRATIVE_VERSION = 3;
+export const NARRATIVE_VERSION = 4;
 export const NARRATIVE_ACCOUNT_LEN = HEADER + 280;
 
 export enum Status {
@@ -56,6 +56,10 @@ export type Narrative = {
   status: Status;
   /** Decimals of the stock mint, needed for `TransferChecked`. */
   stockDecimals: number;
+  /** Protocol fee on buys, pinned at creation. */
+  protocolFeeBps: number;
+  /** Protocol fee on the vault at expiry, pinned at creation. */
+  conversionFeeBps: number;
 };
 
 function view(data: Uint8Array): DataView {
@@ -106,6 +110,8 @@ export function decodeNarrative(data: Uint8Array): Narrative {
     sellTaxBps: v.getUint16(HEADER + 260, true),
     status: data[HEADER + 262] as Status,
     stockDecimals: data[HEADER + 266],
+    protocolFeeBps: v.getUint16(HEADER + 267, true),
+    conversionFeeBps: v.getUint16(HEADER + 269, true),
   };
 }
 

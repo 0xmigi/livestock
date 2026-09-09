@@ -68,7 +68,7 @@ export async function GET(request: Request) {
 
     for (const entry of plan.toExpire) {
       try {
-        expired.push(await send(signer, expireInstructions(entry)));
+        expired.push(await send(signer, await expireInstructions(signer, entry)));
       } catch (cause) {
         failed.push(`expire ${entry.narrative.name}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
