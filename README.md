@@ -66,6 +66,20 @@ cargo build-sbf && solana program deploy target/deploy/livestock.so --program-id
 Do not pass `target/deploy/livestock-keypair.json` as the program id:
 `cargo build-sbf` generates that file and it is a different, unrelated key.
 
+Mainnet uses the same program id. Build reproducibly, then deploy and publish
+the IDL and security.txt in one go (the script refuses to run without a private
+RPC, a funded authority and a binary that carries the embedded security.txt):
+
+```bash
+solana-verify build --library-name livestock
+MAINNET_RPC_URL=https://mainnet.helius-rpc.com/?api-key=... scripts/deploy-mainnet.sh
+```
+
+The IDL (`metadata/livestock.codama.json`, Codama format, since the program is
+Pinocchio and has no Anchor IDL) and the contact card (`metadata/security.json`)
+are written to the Program Metadata program under the `idl` and `security`
+seeds. The binary also embeds a `security.txt` pointing at `SECURITY.md`.
+
 The stock registry comes from the Tokens API (`TOKENS_API_KEY`, read by
 `/api/stocks`): every tokenized equity on Solana, with mint, logo and price.
 Devnet has ten stand-in stock mints named after real xStocks (classic SPL,
