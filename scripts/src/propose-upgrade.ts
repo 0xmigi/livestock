@@ -41,9 +41,12 @@ const PRIORITY_MICROLAMPORTS = 2_000;
 
 const { Permissions } = multisig.types;
 
+// pnpm forwards a literal "--" ahead of the script's own arguments; drop it.
+const argv = process.argv.slice(2).filter((a, i) => !(i === 0 && a === "--"));
+
 function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  const i = argv.indexOf(`--${name}`);
+  return i >= 0 ? argv[i + 1] : undefined;
 }
 
 function loadKeypair(): Keypair {
@@ -183,7 +186,7 @@ async function execute() {
   console.log(`executed proposal ${index}: ${signature}`);
 }
 
-const command = process.argv[2];
+const command = argv[0];
 const run = { propose, show, execute }[command as "propose" | "show" | "execute"];
 if (!run) {
   console.error("usage: propose-upgrade propose --buffer <address> [--memo text] | show --index <n> | execute --index <n>");
