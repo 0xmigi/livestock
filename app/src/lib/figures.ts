@@ -36,9 +36,10 @@ export function tokenPriceOf(n: NarrativeRow, prices: PriceMap): number {
 
 /**
  * Spot price times the billion-token total supply: pump.fun's market cap,
- * the number every launchpad leads with.
+ * the number every launchpad leads with. Called "market cap" in every label;
+ * with a fixed supply it is the same figure others call FDV.
  */
-export function fdvOf(n: NarrativeRow, prices: PriceMap): number {
+export function marketCapOf(n: NarrativeRow, prices: PriceMap): number {
   return usdOf(n, spotPrice(n) * Number(TOKEN_TOTAL_SUPPLY), prices);
 }
 
@@ -50,8 +51,11 @@ export function formatAgo(seconds: number): string {
   return `${Math.floor(s / 86_400)}d ago`;
 }
 
+/** "$1.55M", "$942.71K", "$2.88K": the launchpad way of writing a market cap. */
 export function compact(usd: number): string {
-  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(usd >= 1e7 ? 0 : 1)}M`;
-  if (usd >= 1e4) return `$${(usd / 1e3).toFixed(0)}k`;
+  if (!Number.isFinite(usd)) return "—";
+  if (usd >= 1e9) return `$${(usd / 1e9).toFixed(2)}B`;
+  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(2)}M`;
+  if (usd >= 1e3) return `$${(usd / 1e3).toFixed(2)}K`;
   return formatUsd(usd, 0);
 }

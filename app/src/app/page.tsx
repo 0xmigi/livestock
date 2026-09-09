@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Plus, Search, Sprout } from "lucide-react";
+import { ArrowRight, Check, Copy, Plus, Search, Sprout } from "lucide-react";
 import { formatStock, redemptionPerToken, secondsRemaining } from "@nm/client";
 
 import { Explainer } from "@/components/explainer";
@@ -23,7 +23,7 @@ import {
   TimeBar,
 } from "@/components/ui";
 import { formatUsd, formatUsdAuto, shortAddress, type StockInfo } from "@/lib/config";
-import { backingOf, compact, fdvOf, isLivePhase, tokenPriceOf, usdOf } from "@/lib/figures";
+import { backingOf, compact, marketCapOf, isLivePhase, tokenPriceOf, usdOf } from "@/lib/figures";
 import { usePriceChange } from "@/lib/change";
 import {
   formatCountdown,
@@ -81,7 +81,7 @@ export default function Markets() {
       }
       return true;
     });
-    return wanted.sort((a, b) => fdvOf(b, prices) - fdvOf(a, prices));
+    return wanted.sort((a, b) => marketCapOf(b, prices) - marketCapOf(a, prices));
   }, [rows, now, view, query, prices, stockNames]);
 
   const shown = list.slice(0, limit);
@@ -98,16 +98,23 @@ export default function Markets() {
             <br />
             <span className="text-neutral-400">that expire into stocks</span>
           </h1>
-          <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-neutral-400 lg:col-span-3 lg:row-start-2">
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-neutral-400 lg:col-span-3 lg:row-start-2">
             Short-lived markets for the stories moving stocks—priced, backed, and paid out in the underlying tokenized
             stock.
           </p>
-          <div className="mt-7 lg:col-start-1 lg:row-start-3 lg:self-start">
+          <div className="mt-7 flex items-center gap-5 lg:col-start-1 lg:row-start-3 lg:self-start">
             <Link href="/create" className="inline-block">
               <Button variant="primary" size="lg" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" strokeWidth={2.5} />
                 Create a narrative
               </Button>
+            </Link>
+            <Link
+              href="/how-it-works"
+              className="inline-flex items-center gap-1 text-sm text-neutral-600 transition-colors hover:text-neutral-900"
+            >
+              How it works
+              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
             </Link>
           </div>
 
@@ -311,7 +318,7 @@ function MobileList({ rows, now, prices, view }: ListProps) {
                 </div>
                 <div className="mono mt-0.5 text-xs text-neutral-400">
                   {view === "live"
-                    ? `${compact(fdvOf(n, prices))} FDV · ${formatCountdown(remaining)}`
+                    ? `${formatUsdAuto(tokenPriceOf(n, prices))} · ${formatCountdown(remaining)}`
                     : phase === "settling"
                       ? "Settling"
                       : `${formatStock(perToken, n.stock.decimals, 4)} ${n.stock.symbol} each`}
@@ -319,7 +326,7 @@ function MobileList({ rows, now, prices, view }: ListProps) {
               </div>
               <div className="shrink-0 text-right">
                 <div className="mono text-[15px] font-semibold text-neutral-900">
-                  {view === "live" ? formatUsdAuto(tokenPriceOf(n, prices)) : formatUsd(usdOf(n, backing, prices), 0)}
+                  {view === "live" ? compact(marketCapOf(n, prices)) : formatUsd(usdOf(n, backing, prices), 0)}
                 </div>
                 {view === "live" ? <Change24h n={n} className="text-xs" /> : null}
               </div>
@@ -341,8 +348,8 @@ function Table({ rows, now, prices, view }: ListProps) {
           <tr className="border-b border-neutral-100">
             <th className={th}>Narrative</th>
             <th className={th}>Converts to</th>
+            {view === "live" ? <th className={`${th} text-right`}>Market cap</th> : null}
             {view === "live" ? <th className={`${th} text-right`}>Price</th> : null}
-            {view === "live" ? <th className={`${th} text-right`}>FDV</th> : null}
             <th className={`${th} text-right md:table-cell`}>Vault</th>
             <th className={`${th} text-right`}>{view === "live" ? "Time left" : "Pays out"}</th>
           </tr>
@@ -382,13 +389,13 @@ function Table({ rows, now, prices, view }: ListProps) {
                 </td>
                 {view === "live" ? (
                   <td className="mono px-4 py-3 text-right">
-                    <div className="text-sm font-semibold text-neutral-900">{formatUsdAuto(tokenPriceOf(n, prices))}</div>
+                    <div className="text-sm font-semibold text-neutral-900">{compact(marketCapOf(n, prices))}</div>
                     <Change24h n={n} className="text-[11px]" />
                   </td>
                 ) : null}
                 {view === "live" ? (
                   <td className="mono px-4 py-3 text-right">
-                    <div className="text-sm font-semibold text-neutral-900">{compact(fdvOf(n, prices))}</div>
+                    <div className="text-sm text-neutral-600">{formatUsdAuto(tokenPriceOf(n, prices))}</div>
                   </td>
                 ) : null}
                 <td className="mono px-4 py-3 text-right">

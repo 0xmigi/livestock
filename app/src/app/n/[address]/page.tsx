@@ -45,6 +45,7 @@ import { useActivity, usePriceChange } from "@/lib/change";
 import { useHolders } from "@/lib/holders";
 import { EditNarrative } from "@/components/edit-narrative";
 import { useStockPrice } from "@/lib/price";
+import { compact } from "@/lib/figures";
 
 /** The clock: blue, mono, `13d 15h 1m 22s`, ticking every second. */
 function Countdown({ seconds }: { seconds: number }) {
@@ -200,10 +201,11 @@ export default function NarrativePage({
 
         {/* The clock and the action, in one panel */}
         <section className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="flex flex-col justify-between gap-6 rounded bg-neutral-50 p-5 sm:p-6">
+          <div className="flex min-w-0 flex-col justify-between gap-6 rounded bg-neutral-50 p-5 sm:p-6">
             <div className="space-y-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-center gap-3">
+              {/* Name and price share a line; on a phone the price drops under the name. */}
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                <div className="flex min-w-0 flex-1 basis-56 items-center gap-3">
                   <Thumb src={narrative.meta?.image} name={narrative.name} size={48} shape="square" />
                   <div className="min-w-0">
                     <h1 className="line-clamp-2 text-xl font-semibold leading-tight text-neutral-900">{narrative.name}</h1>
@@ -214,14 +216,19 @@ export default function NarrativePage({
                         <StockLogo stock={stock} size={12} />
                         {stock.symbol}
                       </span>
-                      {phase !== "live" ? <StatusDot phase={phase} /> : null}
+                      {/* No "Ending soon": the timer says it. Only the settling states get a label. */}
+                      {phase !== "live" && phase !== "closing" ? <StatusDot phase={phase} /> : null}
                     </div>
                   </div>
                 </div>
                 {tradable ? (
-                  <div className="shrink-0 text-right">
+                  <div className="shrink-0 sm:text-right">
+                    {/* Market cap leads, as on every launchpad. The per-token price is a detail below. */}
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
+                      Market cap
+                    </div>
                     <div className="numeric text-3xl font-semibold tracking-tight text-neutral-900 sm:text-4xl">
-                      {formatUsdAuto(toUsd(nextPrice))}
+                      {compact(toUsd(nextPrice * Number(TOKEN_TOTAL_SUPPLY)))}
                     </div>
                     <Delta pct={change?.pct ?? null} approx={change?.inStockTerms} className="text-sm font-medium" />
                   </div>
@@ -279,7 +286,7 @@ export default function NarrativePage({
               <TimeBar createdTs={narrative.createdTs} expiryTs={narrative.expiryTs} now={now} phase={phase} />
             </div>
           </div>
-          <div className="rounded bg-neutral-50 p-5">{action}</div>
+          <div className="min-w-0 rounded bg-neutral-50 p-5">{action}</div>
         </section>
 
         {/* Details, in the order a buyer asks: is it alive, what do I get, how big, who is behind it */}
@@ -311,7 +318,7 @@ export default function NarrativePage({
             />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Small label="FDV" value={formatUsd(toUsd(nextPrice * Number(TOKEN_TOTAL_SUPPLY)), 0)} />
+            <Small label="Price per token" value={formatUsdAuto(toUsd(nextPrice))} />
             <Small label="Supply" value={`${supply.toLocaleString()} ${narrative.symbol}`} />
             <Small
               label="Creator holds"

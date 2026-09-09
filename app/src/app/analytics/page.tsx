@@ -16,7 +16,7 @@ import { Thumb } from "@/components/thumb";
 import { Delta, Overview, phaseOf, StockLogo, Tile } from "@/components/ui";
 import { changeOf, fetchActivity, type Activity } from "@/lib/change";
 import { formatUsd, type StockInfo } from "@/lib/config";
-import { compact, fdvOf, isLivePhase, usdOf, type PriceMap } from "@/lib/figures";
+import { compact, marketCapOf, isLivePhase, usdOf, type PriceMap } from "@/lib/figures";
 import { useStockMeta } from "@/lib/logos";
 import { formatCountdown, useNarratives, useNow, type NarrativeRow } from "@/lib/narratives";
 import { useStockChanges, useStockPrices } from "@/lib/price";
@@ -62,7 +62,7 @@ export default function Analytics() {
     let locked = 0;
     let soon = 0;
     for (const n of live) {
-      fdv += fdvOf(n, prices);
+      fdv += marketCapOf(n, prices);
       locked += usdOf(n, n.vaultBalance, prices);
       if (secondsRemaining(n, now) < WEEK) soon++;
     }
@@ -102,7 +102,7 @@ export default function Analytics() {
       if (isLive) {
         row.live++;
         row.locked += usdOf(n, n.vaultBalance, prices);
-        row.fdv += fdvOf(n, prices);
+        row.fdv += marketCapOf(n, prices);
       } else row.ended++;
       byStock.set(n.stockMint, row);
     }
@@ -154,7 +154,7 @@ export default function Analytics() {
 
         <Overview title="Right now" aside={d ? `${d.live.length + d.ended.length} narratives launched` : undefined}>
           <Tile label="Live narratives" value={d ? d.live.length : dash} sub={d ? `${d.soon} ending this week` : undefined} />
-          <Tile label="Combined FDV" value={d ? compact(d.fdv) : dash} sub="across live narratives" />
+          <Tile label="Combined market cap" value={d ? compact(d.fdv) : dash} sub="across live narratives" />
           <Tile label="Locked in vaults" value={d ? compact(d.locked) : dash} sub="stock held for holders" />
           <Tile label="Paid out at expiry" value={d ? compact(d.paidOut) : dash} sub={d ? `${d.ended.length} narratives ended` : undefined} />
         </Overview>
@@ -202,7 +202,7 @@ export default function Analytics() {
                     <th className="px-4 py-2.5 font-medium">Stock</th>
                     <th className="px-4 py-2.5 text-right font-medium">Live</th>
                     <th className="px-4 py-2.5 text-right font-medium">Ended</th>
-                    <th className="hidden px-4 py-2.5 text-right font-medium sm:table-cell">FDV</th>
+                    <th className="hidden px-4 py-2.5 text-right font-medium sm:table-cell">Market cap</th>
                     <th className="px-4 py-2.5 text-right font-medium">Locked</th>
                     <th className="hidden w-40 px-4 py-2.5 font-medium md:table-cell">Share</th>
                   </tr>
