@@ -778,7 +778,7 @@ function StockOption({
       onClick={onPick}
       disabled={!stock.available}
       aria-pressed={active}
-      title={stock.available ? undefined : "Only on mainnet"}
+      title={stock.available ? undefined : stock.unavailableReason ?? "Not yet"}
       className={`relative flex flex-col items-start gap-3 rounded p-4 text-left transition-colors ${
         active ? "bg-primary text-on-primary" : "lift bg-neutral-50"
       } disabled:cursor-not-allowed disabled:opacity-40`}
@@ -800,7 +800,9 @@ function StockOption({
           {price > 0 ? `${isLive ? "" : "~"}${formatUsd(price)}` : "—"}
         </span>
         {stock.available ? null : (
-          <span className={`mt-1 block text-[11px] ${active ? "text-on-primary/50" : "text-neutral-400"}`}>Mainnet only</span>
+          <span className={`mt-1 block text-[11px] ${active ? "text-on-primary/50" : "text-neutral-400"}`}>
+            {stock.unavailableReason ?? "Not yet"}
+          </span>
         )}
       </span>
     </button>

@@ -12,6 +12,8 @@
 
 import { NextResponse } from "next/server";
 
+import { checkTradability, type NotTradable } from "@/lib/server/listing";
+
 const TOKENS_API = "https://api.tokens.xyz/v1";
 
 /** Curated lists to merge, in priority order. `stocks` already has the ETFs people ask for; `etfs` adds the rest. */
@@ -42,6 +44,13 @@ export type StockListing = {
   /** Market cap of the token on Solana, not of the company. */
   marketCapUsd?: number;
   holders?: number;
+  /**
+   * Mainnet only: whether a narrative may convert into it right now, by the
+   * rules in src/lib/server/listing.ts. Absent on devnet, where the pins decide.
+   */
+  tradable?: boolean;
+  /** Why not, when `tradable` is false. */
+  reason?: NotTradable;
 };
 
 type ApiVariant = {
@@ -164,6 +173,16 @@ export async function GET() {
     const stocks = [...byMint.values()].sort(
       (a, b) => (b.liquidityUsd ?? 0) - (a.liquidityUsd ?? 0),
     );
+
+    if (process.env.NEXT_PUBLIC_CLUSTER === "mainnet") {
+      const verdicts = await checkTradability(stocks, solUsd);
+      for (const s of stocks) {
+        const v = verdicts.get(s.mint);
+        if (!v) continue;
+        s.tradable = v.tradable;
+        if (!v.tradable) s.reason = v.reason;
+      }
+    }
 
     return NextResponse.json(
       { stocks, solUsd, fetchedAt: Date.now() },

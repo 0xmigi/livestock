@@ -103,6 +103,14 @@ those ten are pickable there; the rest of the catalogue shows as mainnet-only:
 NEXT_PUBLIC_STOCKS=TSLAx:8gfqWFan4bfnm3QXFC67VStWpf31ZzJK5uHT6Jiip2wg:8:353,NVDAx:AysPNDmoUrcr2RbtCNn5fMfLKPmKRvvoxAXTiT61k5dh:8:230,AAPLx:FjBzTxa57GzcPakBb7TPed2HM3SaYebhNs5RHVGu6nub:8:320,SPYx:CVgVgVpBGskc6MqZGLoCtHzSRTznWtJCcB5h9LM1cphW:8:770,MSTRx:39HoeQsujcqFEdUUX1gngA1jb4w1aX2Txs2ZEuYzWXLT:8:143,GOOGLx:uVQdBmMn2QfmwttG5Hi8697DGUXFD136xcDKQCGPAVB:8:337,AMZNx:4MMLbN6Wy2TPHE3e4MEmZt4s927ERwBVywDG28qQWne4:8:258,METAx:HjDxAEZ67VbTmfXcBK2uzCAGSGQmJ7VsXanrrch5dU7N:8:617,COINx:Eg6usUHZSeytKyYWyfKACjuCwnE4Q5zZR7MVrrnTqXj4:8:185,HOODx:E28rNA15CnXpZpWSE11zZ8C8JnsDPzRBE9ofqMQa5KLE:8:122
 ```
 
+On mainnet nothing is pinned. `/api/stocks` applies three automatic rules
+(`app/src/lib/server/listing.ts`): a stock is pickable when Jupiter can route
+a $100 buy into it under 1% price impact, its mint charges no transfer fee, and
+its mint has no transfer hook enabled. The rest of the catalogue stays visible
+with the reason ("No pool yet", "Thin pool", "Transfer fee") and lights up on
+its own once a pool appears. `STOCK_DENY_LIST` (comma-separated mints or
+symbols) is the emergency switch for a stock that should not be offered.
+
 When a narrative's date passes, nothing happens on its own: someone has to
 send `expire`, then `convert` for every holder. The keeper does that. Run it
 next to the dev server and it walks devnet every twenty seconds, paying fees

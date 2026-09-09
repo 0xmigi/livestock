@@ -8,7 +8,8 @@
  * not exist, so each listed stock whose symbol has a stand-in mint in
  * `NEXT_PUBLIC_STOCKS` is pointed at that mint and the rest are shown but
  * marked unavailable: the full catalogue is visible, and only what the
- * program can actually convert into is pickable.
+ * program can actually convert into is pickable. On mainnet the API applies
+ * the listing rules (src/lib/server/listing.ts) and says why a stock is out.
  */
 
 import { useEffect, useState } from "react";
@@ -45,7 +46,8 @@ function fromListing(l: StockListing): StockInfo | null {
       decimals: l.decimals,
       fallbackPriceUsd: l.priceUsd ?? 0,
       known: true,
-      available: CLUSTER === "mainnet",
+      available: CLUSTER === "mainnet" && l.tradable !== false,
+      unavailableReason: CLUSTER === "mainnet" ? l.reason : "Mainnet only",
       icon: l.icon,
       issuer: l.issuer,
       tier: l.tier,
@@ -73,7 +75,7 @@ function merge(listings: StockListing[]): StockInfo[] {
     if (pin) {
       // The pin says which mint this symbol is on this cluster.
       pinned.delete(base.symbol.toUpperCase());
-      out.push({ ...base, mint: pin.mint, decimals: pin.decimals, available: true });
+      out.push({ ...base, mint: pin.mint, decimals: pin.decimals, available: true, unavailableReason: undefined });
       seen.add(pin.mint);
     } else if (!seen.has(base.mint)) {
       out.push(base);

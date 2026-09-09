@@ -73,10 +73,13 @@ export type StockInfo = {
   /** False for a stock that turned up on-chain but is not in the registry. */
   known: boolean;
   /**
-   * Whether a narrative can convert into it on this cluster. Every listed
-   * stock is available on mainnet; on devnet only the stand-in mints are.
+   * Whether a narrative can convert into it on this cluster. On mainnet the
+   * listing rules decide (src/lib/server/listing.ts); on devnet only the
+   * stand-in mints are.
    */
   available: boolean;
+  /** One short line on why not, when `available` is false. */
+  unavailableReason?: string;
   icon?: string;
   /** Who issues the token: "xStock", "Ondo", "Backpack Securities", ... */
   issuer?: string;
