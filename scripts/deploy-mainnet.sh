@@ -26,6 +26,21 @@ BALANCE=$(solana balance "$AUTHORITY" -u "$MAINNET_RPC_URL" | awk '{print $1}')
 awk "BEGIN { exit !($BALANCE >= $MIN_SOL) }" || { echo "$AUTHORITY has $BALANCE SOL on mainnet; needs at least $MIN_SOL"; exit 1; }
 
 if solana program show "$PROGRAM_ID" -u "$MAINNET_RPC_URL" >/dev/null 2>&1; then
+  CURRENT=$(solana program show "$PROGRAM_ID" -u "$MAINNET_RPC_URL" | awk '/^Authority/ {print $2}')
+  if [ "$CURRENT" != "$AUTHORITY" ]; then
+    # The upgrade authority is the Squads vault. The CLI can only stage the
+    # bytes: write them to a buffer, hand the buffer to the vault, and the
+    # upgrade itself is proposed and approved in Squads.
+    echo "== upgrade authority is $CURRENT (Squads), not this wallet: staging a buffer"
+    echo "== executable hash $(solana-verify get-executable-hash "$BIN")"
+    LEN=$(solana program show "$PROGRAM_ID" -u "$MAINNET_RPC_URL" | awk '/^Data Length/ {print $3}')
+    [ "$(stat -f %z "$BIN")" -le "$LEN" ] || echo "!! binary is larger than the program data account ($LEN bytes): the multisig must run 'solana program extend' first"
+    BUFFER=$(solana program write-buffer "$BIN" -u "$MAINNET_RPC_URL" -k "$KEYPAIR" --with-compute-unit-price 2000 --max-sign-attempts 30 | awk '/^Buffer/ {print $2}')
+    solana program set-buffer-authority "$BUFFER" --new-buffer-authority "$CURRENT" -u "$MAINNET_RPC_URL" -k "$KEYPAIR"
+    echo "== buffer $BUFFER is owned by the vault. In Squads: Developers > Programs > Upgrade, paste the buffer, approve, execute."
+    echo "== then re-run this script only if the IDL or security card changed (they publish below)."
+    exit 0
+  fi
   echo "== $PROGRAM_ID exists on mainnet: upgrading"
   ID_ARG=(--program-id "$PROGRAM_ID")
 else
@@ -45,5 +60,4 @@ npx --yes @solana-program/program-metadata@latest write idl "$PROGRAM_ID" metada
 npx --yes @solana-program/program-metadata@latest write security "$PROGRAM_ID" metadata/security.json \
   --keypair "$KEYPAIR" --rpc "$MAINNET_RPC_URL"
 
-echo "== done. Next: move the upgrade authority to a multisig:"
-echo "   solana program set-upgrade-authority $PROGRAM_ID --new-upgrade-authority <multisig> -u \$MAINNET_RPC_URL --skip-new-upgrade-authority-signer-check"
+echo "== done."
