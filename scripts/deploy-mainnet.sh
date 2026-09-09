@@ -23,6 +23,9 @@ AUTHORITY=$(solana-keygen pubkey "$KEYPAIR")
 strings "$BIN" | grep -q "BEGIN SECURITY.TXT" || { echo "$BIN has no embedded security.txt"; exit 1; }
 
 BALANCE=$(solana balance "$AUTHORITY" -u "$MAINNET_RPC_URL" | awk '{print $1}')
+# A first deploy pays the program's rent for good; an upgrade only fronts the
+# buffer's rent, which the spill account gets back once the upgrade executes.
+solana program show "$PROGRAM_ID" -u "$MAINNET_RPC_URL" >/dev/null 2>&1 && MIN_SOL=0.6
 awk "BEGIN { exit !($BALANCE >= $MIN_SOL) }" || { echo "$AUTHORITY has $BALANCE SOL on mainnet; needs at least $MIN_SOL"; exit 1; }
 
 if solana program show "$PROGRAM_ID" -u "$MAINNET_RPC_URL" >/dev/null 2>&1; then
