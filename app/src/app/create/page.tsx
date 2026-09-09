@@ -21,6 +21,7 @@ import {
   initialVirtualStock,
   openingState,
   spotPrice,
+  TOKEN_TOTAL_SUPPLY,
 } from "@nm/client";
 import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { createNoopSigner, generateKeyPairSigner } from "@solana/kit";
@@ -28,6 +29,8 @@ import { createNoopSigner, generateKeyPairSigner } from "@solana/kit";
 import { CurvePreview } from "@/components/curve-preview";
 import { Shell } from "@/components/shell";
 import { Thumb } from "@/components/thumb";
+import { formatSpan, TimeSlider } from "@/components/time-slider";
+import { XCard } from "@/components/x-card";
 import {
   Button,
   Field,
@@ -43,13 +46,17 @@ import {
   formatUsd,
   formatUsdAuto,
   formatUsdCompact,
+  NAME_MAX_BYTES,
   rpc,
   SOLANA_CHAIN,
+  SYMBOL_MAX_LETTERS,
   type StockInfo,
 } from "@/lib/config";
+import { compact } from "@/lib/figures";
 import { fetchStockTokenProgram, formatDate } from "@/lib/narratives";
 import { useStockPrice } from "@/lib/price";
 import { matchesStock, useSolPrice, useStocks } from "@/lib/stocks";
+import { clipUtf8, utf8Length } from "@/lib/text";
 import { signAndSend, toUserMessage } from "@/lib/tx";
 
 // From the program's one-hour minimum up to two weeks. Short ones exist so a
@@ -59,6 +66,11 @@ import { signAndSend, toUserMessage } from "@/lib/tx";
 // from when the button was pressed, so every expiry gets a small head start:
 // without it "1 hour" lands a few seconds under the minimum and is rejected.
 const LEAD_SECS = 120;
+
+/** The program's floor. */
+const MIN_DURATION_SECS = 3600;
+/** Two weeks is the ceiling for now; the program itself allows 90 days. */
+const MAX_DURATION_SECS = 14 * 24 * 3600;
 
 const DURATIONS = [
   { label: "1 hour", secs: 3600 },
@@ -147,6 +159,8 @@ export default function Create() {
   const [bio, setBio] = useState("");
   const [source, setSource] = useState("");
   const [duration, setDuration] = useState(DURATIONS[2].secs);
+  /** A time chosen on the slider, unix seconds. Null means a preset. */
+  const [pick, setPick] = useState<number | null>(null);
   const [showCurve, setShowCurve] = useState(false);
 
   const [busy, setBusy] = useState(false);
@@ -168,17 +182,36 @@ export default function Create() {
   const storyValid =
     image !== null &&
     name.trim().length > 0 &&
-    name.length <= 32 &&
+    utf8Length(name.trim()) <= NAME_MAX_BYTES &&
     symbol.trim().length > 0 &&
-    symbol.length <= 10;
-  const valid = stock !== null && storyValid && virtualStock > 0n;
-
-  const expiryPreview = Math.floor(Date.now() / 1000) + duration + LEAD_SECS;
+    symbol.length <= SYMBOL_MAX_LETTERS;
+  // A preset counts from now; a chosen time is absolute. Both leave the
+  // program's one-hour minimum a head start. The slider only offers times
+  // inside the window, so the error is for a pick that has gone stale.
+  const now = Math.floor(Date.now() / 1000);
+  const customTs = pick;
+  const dateError =
+    customTs === null
+      ? null
+      : customTs < now + MIN_DURATION_SECS + LEAD_SECS
+        ? "At least an hour from now."
+        : customTs > now + MAX_DURATION_SECS
+          ? "Two weeks out at most, for now."
+          : null;
+  const expiryPreview =
+    customTs !== null && dateError === null ? customTs : now + duration + LEAD_SECS;
+  const valid = stock !== null && storyValid && virtualStock > 0n && dateError === null;
   const index = STEPS.findIndex((s) => s.id === step);
   const prev = STEPS[index - 1] ?? null;
   const next = STEPS[index + 1] ?? null;
   const canAdvance =
-    step === "stock" ? stock !== null : step === "story" ? storyValid : true;
+    step === "stock"
+      ? stock !== null
+      : step === "story"
+        ? storyValid
+        : step === "date"
+          ? dateError === null
+          : true;
 
   const pickImage = (file: File | null) => {
     setImage(file);
@@ -193,6 +226,10 @@ export default function Create() {
     const wallet = wallets.find((w) => w.address === owner) ?? wallets[0];
     if (!wallet) {
       setError("No Solana wallet connected.");
+      return;
+    }
+    if (customTs !== null && customTs < Math.floor(Date.now() / 1000) + MIN_DURATION_SECS + 60) {
+      setError("That time is too soon now. Pick a later one.");
       return;
     }
 
@@ -234,7 +271,11 @@ export default function Create() {
       const { fundFor } = getNarrativeMintSize(cleanName, cleanSymbol, uploaded.uri);
       const lamports = await rpc.getMinimumBalanceForRentExemption(BigInt(fundFor)).send();
 
-      const expiryTs = BigInt(Math.floor(Date.now() / 1000) + duration + LEAD_SECS);
+      const expiryTs = BigInt(
+        customTs !== null && dateError === null
+          ? customTs
+          : Math.floor(Date.now() / 1000) + duration + LEAD_SECS,
+      );
 
       setProgress("Confirm in your wallet");
       await signAndSend(
@@ -314,6 +355,21 @@ export default function Create() {
     </div>
   );
 
+  // What a post carrying the contract address shows. Only at the end.
+  const xCard = (
+    <div>
+      <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">
+        On X
+      </div>
+      <XCard
+        name={name}
+        symbol={symbol}
+        image={preview ?? undefined}
+        price={stock && virtualStock > 0n ? formatUsdAuto(toUsd(openingPrice)) : "—"}
+      />
+    </div>
+  );
+
   const action = (
     <div className="flex items-center gap-3 rounded bg-neutral-50 p-2.5 pl-4">
       <div className="min-w-0 flex-1 truncate text-sm text-neutral-400">
@@ -324,7 +380,7 @@ export default function Create() {
               ? `${name.trim()} · $${symbol || "TICKER"}`
               : "Name the narrative"
             : step === "date"
-              ? `Converts on ${formatDate(expiryPreview)}`
+              ? (dateError ?? `Converts on ${formatDate(expiryPreview)}`)
               : busy
                 ? progress
                 : "One transaction. Nothing can be changed after."}
@@ -491,19 +547,23 @@ export default function Create() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
-              <Field label="Name">
+              <Field label="Name" hint={`${utf8Length(name)}/${NAME_MAX_BYTES}`}>
                 <input
                   value={name}
-                  onChange={(e) => setName(e.target.value.slice(0, 32))}
+                  onChange={(e) => setName(clipUtf8(e.target.value, NAME_MAX_BYTES))}
                   className={inputClass}
                   placeholder="Robotaxi Austin"
                   autoFocus
                 />
               </Field>
-              <Field label="Ticker">
+              <Field label="Ticker" hint={`${symbol.length}/${SYMBOL_MAX_LETTERS}`}>
                 <input
                   value={symbol}
-                  onChange={(e) => setSymbol(e.target.value.toUpperCase().slice(0, 10))}
+                  onChange={(e) =>
+                    setSymbol(
+                      e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, SYMBOL_MAX_LETTERS),
+                    )
+                  }
                   className={`${inputClass} mono`}
                   placeholder="RBTX"
                 />
@@ -550,13 +610,16 @@ export default function Create() {
 
             <div className="grid grid-cols-3 gap-3">
               {DURATIONS.map((d) => {
-                const on = duration === d.secs;
-                const when = Math.floor(Date.now() / 1000) + d.secs + LEAD_SECS;
+                const on = pick === null && duration === d.secs;
+                const when = now + d.secs + LEAD_SECS;
                 return (
                   <button
                     key={d.label}
                     type="button"
-                    onClick={() => setDuration(d.secs)}
+                    onClick={() => {
+                      setDuration(d.secs);
+                      setPick(null);
+                    }}
                     aria-pressed={on}
                     className={`relative rounded p-4 text-left transition-colors ${
                       on ? "bg-primary text-on-primary" : "lift bg-neutral-50"
@@ -570,35 +633,51 @@ export default function Create() {
               })}
             </div>
 
-            <div className="rounded bg-neutral-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-neutral-900">Price curve</div>
-                  <div className="mt-0.5 text-xs text-neutral-400">
-                    The pump.fun curve, priced in {stock?.symbol ?? "the stock"}. Opens at 30 SOL of
-                    virtual liquidity, like every pump.fun launch.
-                  </div>
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-neutral-900">Or a specific time</div>
+              <div className="rounded bg-neutral-50 p-4">
+                {/* Same shape as the preset tiles: how long in big type, the date under it. */}
+                <div className="display text-lg text-neutral-900">{formatSpan(expiryPreview - now)}</div>
+                <div className="mono mt-1 text-xs text-neutral-400">{formatDate(expiryPreview)}</div>
+                <div className="mt-5">
+                  <TimeSlider
+                    value={expiryPreview}
+                    onChange={setPick}
+                    min={now + MIN_DURATION_SECS + LEAD_SECS}
+                    max={now + MAX_DURATION_SECS}
+                  />
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => setShowCurve((v) => !v)}>
-                  {showCurve ? "Hide" : "Show"}
-                </Button>
+                {dateError ? <div className="mt-2 text-xs text-accent">{dateError}</div> : null}
               </div>
-              {showCurve && stock ? (
-                <div className="mt-4 space-y-4">
-                  <CurvePreview curve={curve} stockPriceUsd={price} stockDecimals={decimals} stockSymbol={stock.symbol} />
-                  <dl className="mono space-y-1.5 border-t border-neutral-100 pt-4 text-xs">
-                    <Term label="Opening liquidity">
-                      {formatStock(virtualStock, decimals, 4)} {stock.symbol} virtual
-                    </Term>
-                    <Term label="Total supply">1,000,000,000</Term>
-                    <Term label="On the curve">793,100,000</Term>
-                    <Term label="Decimals">0, whole tokens only</Term>
-                    <Term label="Your fee on every buy">{FEE_BPS / 100}%</Term>
-                    <Term label="Exit tax, kept for holders who stay">{SELL_TAX_BPS / 100}%</Term>
-                  </dl>
-                </div>
-              ) : null}
             </div>
+
+            {/* The curve is fixed and the same for every narrative: a footnote, not a decision. */}
+            <p className="px-1 text-xs leading-relaxed text-neutral-400">
+              Priced on the pump.fun curve in {stock?.symbol ?? "the stock"}, opening at 30 SOL of
+              virtual liquidity like every pump.fun launch.{" "}
+              <button
+                type="button"
+                onClick={() => setShowCurve((v) => !v)}
+                className="underline underline-offset-2 hover:text-neutral-600"
+              >
+                {showCurve ? "Hide the curve" : "Show the curve"}
+              </button>
+            </p>
+            {showCurve && stock ? (
+              <div className="space-y-4 rounded bg-neutral-50 p-4">
+                <CurvePreview curve={curve} stockPriceUsd={price} stockDecimals={decimals} stockSymbol={stock.symbol} />
+                <dl className="mono space-y-1.5 border-t border-neutral-100 pt-4 text-xs">
+                  <Term label="Opening liquidity">
+                    {formatStock(virtualStock, decimals, 4)} {stock.symbol} virtual
+                  </Term>
+                  <Term label="Total supply">1,000,000,000</Term>
+                  <Term label="On the curve">793,100,000</Term>
+                  <Term label="Decimals">0, whole tokens only</Term>
+                  <Term label="Your fee on every buy">{FEE_BPS / 100}%</Term>
+                  <Term label="Exit tax, kept for holders who stay">{SELL_TAX_BPS / 100}%</Term>
+                </dl>
+              </div>
+            ) : null}
             {action}
           </section>
         ) : null}
@@ -613,7 +692,7 @@ export default function Create() {
               </p>
             </header>
 
-            <div className="lg:hidden">{previewCard}</div>
+            <div className="lg:hidden">{xCard}</div>
 
             {stock ? (
               <Overview
@@ -624,7 +703,11 @@ export default function Create() {
               >
                 <Tile label="Converts to" value={stock.symbol} sub="paid in, paid out" />
                 <Tile label="Converts on" value={formatDate(expiryPreview).split(",")[0]} sub={formatDate(expiryPreview).split(",")[1]?.trim()} />
-                <Tile label="Opening price" value={formatUsdAuto(toUsd(openingPrice))} sub="per token" />
+                <Tile
+                  label="Opening market cap"
+                  value={compact(toUsd(openingPrice * Number(TOKEN_TOTAL_SUPPLY)))}
+                  sub={`${formatUsdAuto(toUsd(openingPrice))} per token`}
+                />
                 <Tile label="Your fee" value={`${(FEE_BPS / 100).toFixed(2)}%`} sub="on every buy" />
                 <Tile label="Exit tax" value={`${SELL_TAX_BPS / 100}%`} sub="kept in the vault" />
                 <Tile label="Curve" value="pump.fun" sub="1B supply, 793.1M on the curve" />
@@ -645,7 +728,7 @@ export default function Create() {
 
       {/* What you are building, kept in view while you fill it in */}
       <aside className="hidden space-y-4 lg:sticky lg:top-6 lg:block">
-        {previewCard}
+        {step === "review" ? xCard : previewCard}
         <div className="rounded bg-neutral-50 p-4">
           <dl className="space-y-2">
             <Summary label="Converts to">{stock ? stock.symbol : "—"}</Summary>
@@ -656,7 +739,9 @@ export default function Create() {
               <Summary label="Liquidity">{formatUsdCompact(stock.liquidityUsd)}</Summary>
             ) : null}
             <Summary label="Converts on">{formatDate(expiryPreview)}</Summary>
-            <Summary label="Opening price">{stock && virtualStock > 0n ? formatUsdAuto(toUsd(openingPrice)) : "—"}</Summary>
+            <Summary label="Opening cap">
+              {stock && virtualStock > 0n ? compact(toUsd(openingPrice * Number(TOKEN_TOTAL_SUPPLY))) : "—"}
+            </Summary>
             <Summary label="Your fee">{(FEE_BPS / 100).toFixed(2)}% on every buy</Summary>
             <Summary label="Exit tax">{SELL_TAX_BPS / 100}% kept in the vault</Summary>
             <Summary label="Curve">pump.fun, 1B supply</Summary>
