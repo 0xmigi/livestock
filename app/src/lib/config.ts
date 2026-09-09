@@ -39,9 +39,20 @@ const DEFAULT_WS =
     ? "wss://api.mainnet-beta.solana.com"
     : "wss://api.devnet.solana.com";
 
-// An empty variable counts as unset: hosts often define every name at once.
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_RPC;
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || DEFAULT_WS;
+/**
+ * Helius URLs differ between clusters only by host, so one key serves both
+ * and `NEXT_PUBLIC_CLUSTER` alone decides where the app runs: a Helius URL
+ * for the other cluster is pointed at this one. Other providers' URLs pass
+ * through untouched.
+ */
+export function forCluster(url: string | undefined): string | undefined {
+  // An empty variable counts as unset: hosts often define every name at once.
+  if (!url) return undefined;
+  return url.replace(/\b(mainnet|devnet)\.helius-rpc\.com/, `${CLUSTER}.helius-rpc.com`);
+}
+
+export const RPC_URL = forCluster(process.env.NEXT_PUBLIC_RPC_URL) ?? DEFAULT_RPC;
+export const WS_URL = forCluster(process.env.NEXT_PUBLIC_WS_URL) ?? DEFAULT_WS;
 
 export const rpc = createSolanaRpc(RPC_URL);
 export const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
