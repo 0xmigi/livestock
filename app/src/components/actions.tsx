@@ -409,7 +409,7 @@ export function BuyPanel({
                 inputMode="decimal"
                 value={dollars}
                 onChange={(e) => setDollars(e.target.value)}
-                className="numeric w-full bg-transparent text-2xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
+                className="numeric w-full min-w-0 bg-transparent text-2xl font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
                 placeholder="0"
                 aria-label="Amount in dollars"
               />

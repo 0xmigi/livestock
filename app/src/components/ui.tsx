@@ -407,7 +407,7 @@ export function phaseOf(status: Status, secondsRemaining: number): Phase {
 
 const PHASES: Record<Phase, { dot: string; text: string; label: string }> = {
   live: { dot: "bg-live", text: "text-neutral-600", label: "Live" },
-  closing: { dot: "bg-closing", text: "text-neutral-600", label: "Ending soon" },
+  closing: { dot: "bg-live", text: "text-neutral-600", label: "Live" },
   settling: { dot: "bg-closing", text: "text-neutral-600", label: "Settling" },
   redeemable: { dot: "bg-accent", text: "text-neutral-600", label: "Redeemable" },
   settled: { dot: "bg-settled", text: "text-neutral-400", label: "Settled" },
