@@ -20,17 +20,23 @@
 //! Being a plain keypair rather than a PDA is also what lets a creator grind a
 //! vanity address, as every launchpad does.
 //!
-//! The vault is an associated token account for the stock. Tokenized stocks
-//! are Token-2022 mints whose extensions determine account size, and the ATA
-//! program computes that correctly.
+//! The vault must be the narrative PDA's **associated token account** for the
+//! stock, and nothing else. Tokenized stocks are Token-2022 mints whose
+//! extensions determine account size, and the ATA program computes that
+//! correctly; more to the point, nobody holds a keypair for that address. Any
+//! other token account owned by the PDA would do for a moment, but its close
+//! authority survives the owner change, so its creator could close it while
+//! empty and put an account they own at the same address, and every buy from
+//! then on would pay them.
 //!
 //! What the program will not take on trust: the mint must be Token-2022, have
 //! zero decimals, have **no supply yet**, carry **no freeze authority**, have
-//! already handed its **mint authority to this narrative's PDA**, and name that
-//! same PDA as its **permanent delegate**. Without the authority check anyone
-//! could keep minting beside the curve; without the delegate, `convert` could
-//! not pay holders out at expiry — and a delegate that was anyone else could
-//! seize their tokens.
+//! already handed its **mint authority to this narrative's PDA**, name that
+//! same PDA as its **permanent delegate**, and carry **no other extension**
+//! beyond its metadata. Without the authority check anyone could keep minting
+//! beside the curve; without the delegate, `convert` could not pay holders out
+//! at expiry — and a delegate that was anyone else could seize their tokens. A
+//! close authority would let the creator replace the whole mint after creation.
 
 use {
     crate::{error::MarketError, state::*, utils::*},
@@ -49,7 +55,7 @@ const NARRATIVE: usize = 1;
 /// 1. `[writable]` narrative PDA
 /// 2. `[]` stock mint
 /// 3. `[]` narrative mint — Token-2022, pre-created, authority already handed over
-/// 4. `[]` vault token account — for the stock mint, owned by the narrative PDA
+/// 4. `[]` vault token account — the narrative PDA's associated account for the stock
 /// 5. `[]` system program
 /// 6. `[]` stock token program — classic SPL or Token-2022
 pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
@@ -145,12 +151,18 @@ pub fn create_narrative(accounts: &mut [AccountView], data: &[u8]) -> ProgramRes
         // And only this narrative may burn on holders' behalf: that is how
         // every holder is paid out at expiry without signing. Anyone else as
         // delegate could take holders' tokens, so nothing else is accepted.
+        // The same walk refuses every extension but the metadata pair.
         if mint_permanent_delegate(narrative_mint)? != Some(narrative_key) {
             return Err(MarketError::BadParameters.into());
         }
 
-        // The vault is pinned here and enforced by address on every later
-        // instruction.
+        // The vault is the PDA's associated account and nothing else: an
+        // address with no keypair behind it, so it cannot be closed and
+        // re-created under another owner. Pinned here; every later
+        // instruction checks the address and the owner again.
+        let expected_vault =
+            associated_token_address(&narrative_key, stock_token_program.address(), &stock_key);
+        require_address(vault, &expected_vault)?;
         token_balance_checked(
             vault,
             stock_token_program.address(),

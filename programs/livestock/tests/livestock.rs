@@ -931,6 +931,50 @@ fn convert_before_expiry_fails() {
     assert!(convert(&mut m, &a).is_err());
 }
 
+/// The vault must be the narrative PDA's associated token account. Any other
+/// token account owned by the PDA keeps its creator's close authority, so it
+/// could be emptied, closed and re-created under the creator's own key at the
+/// same address, and every buy would then pay the creator.
+#[test]
+fn a_vault_that_is_not_the_associated_token_account_is_rejected() {
+    for env in [Env::new(), Env::new_token_2022()] {
+        let mut env = env;
+        let creator = env.creator.insecure_clone();
+        let expiry = env.now() + DURATION;
+        let (mint, narrative) = env.create_narrative_mint();
+        let vault = env.create_keypair_vault(&narrative);
+        let ix = create_narrative_ix(
+            &env, &creator.pubkey(), &mint, &vault, "ROBOTAXI", "RBTX", expiry,
+            VIRTUAL_STOCK, FEE_BPS, SELL_TAX_BPS,
+        );
+        assert!(
+            env.send(&[ix], &[&creator]).is_err(),
+            "a keypair vault owned by the PDA must be rejected",
+        );
+    }
+}
+
+/// A mint close authority would let the creator delete the mint at zero
+/// supply, right after creation, and put a mint with themselves as permanent
+/// delegate at the same address. Nothing reads the mint again, so the
+/// extension set is pinned at creation.
+#[test]
+fn a_mint_with_a_close_authority_is_rejected() {
+    let mut env = Env::new();
+    let creator = env.creator.insecure_clone();
+    let expiry = env.now() + DURATION;
+    let (mint, narrative) = env.create_narrative_mint_with_close_authority();
+    let vault = env.create_vault(&narrative);
+    let ix = create_narrative_ix(
+        &env, &creator.pubkey(), &mint, &vault, "ROBOTAXI", "RBTX", expiry,
+        VIRTUAL_STOCK, FEE_BPS, SELL_TAX_BPS,
+    );
+    assert!(
+        env.send(&[ix], &[&creator]).is_err(),
+        "a mint the creator can close must be rejected",
+    );
+}
+
 #[test]
 fn a_mint_whose_delegate_is_not_the_narrative_is_rejected() {
     for delegate in [Delegate::None, Delegate::Other(Keypair::new().pubkey())] {
@@ -973,6 +1017,28 @@ fn a_buy_that_routes_the_protocol_fee_elsewhere_is_rejected() {
     );
     assert!(m.env.send(&[ix], &[&h.wallet]).is_err(), "fee must go to the treasury");
     assert_eq!(m.env.token_balance(&elsewhere), 0);
+}
+
+/// The creator's fee can only land in the creator's own account for the
+/// stock. A buyer building their own transaction cannot route it to another
+/// account they hold, nor pay it to themselves as a no-op self-transfer.
+#[test]
+fn a_buy_that_routes_the_creator_fee_elsewhere_is_rejected() {
+    let mut m = setup();
+    let h = holder(&mut m);
+    let stock_mint = m.env.stock_mint;
+    let elsewhere = m.env.create_token_account(&h.wallet.pubkey(), &stock_mint);
+
+    for destination in [elsewhere, h.stock] {
+        let ix = buy_ix(
+            &m.env, &m.narrative_mint, &h.wallet.pubkey(), &h.tokens, &h.stock,
+            &destination, &m.treasury, &m.narrative, &m.vault, M, u64::MAX,
+        );
+        assert!(m.env.send(&[ix], &[&h.wallet]).is_err(), "fee must go to the creator");
+    }
+    assert_eq!(m.env.token_balance(&elsewhere), 0);
+    assert_eq!(m.env.token_balance(&m.creator_fee), 0);
+    assert_eq!(vault_balance(&m), 0);
 }
 
 /// At expiry the conversion fee leaves the vault once, and every holder's

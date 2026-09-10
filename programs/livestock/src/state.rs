@@ -28,6 +28,11 @@ pub const TOKEN_PROGRAM: Address =
 /// SPL Token-2022 program. Real tokenized stocks (xStocks) live here.
 pub const TOKEN_2022_PROGRAM: Address =
     Address::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+/// The associated token account program. A narrative's vault must be the
+/// narrative PDA's associated account for the stock: an address nobody holds
+/// a keypair for, so it can never be closed and re-created under another owner.
+pub const ASSOCIATED_TOKEN_PROGRAM: Address =
+    Address::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 pub const MAX_NAME_LEN: usize = 32;
 pub const MAX_SYMBOL_LEN: usize = 10;

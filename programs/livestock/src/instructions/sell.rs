@@ -69,6 +69,14 @@ pub fn sell(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         require_address(vault, &state.vault)?;
         require_address(stock_mint, &state.stock_mint)?;
         require_address(stock_token_program, &state.stock_token_program)?;
+        // The vault must still be this narrative's own account, not whatever
+        // sits at that address today.
+        token_balance_checked(
+            vault,
+            &state.stock_token_program,
+            &state.stock_mint,
+            narrative.address(),
+        )?;
 
         if state.status()? != Status::Live {
             return Err(MarketError::NotLive.into());

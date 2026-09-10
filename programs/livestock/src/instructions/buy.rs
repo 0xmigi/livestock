@@ -72,6 +72,14 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
         require_address(stock_mint, &state.stock_mint)?;
         require_address(stock_token_program, &state.stock_token_program)?;
         verify_pda(narrative, &state.signer_seeds(), state.bump)?;
+        // The address alone would trust whatever account sits there today;
+        // the vault must still be this narrative's own.
+        token_balance_checked(
+            vault,
+            &state.stock_token_program,
+            &state.stock_mint,
+            narrative.address(),
+        )?;
 
         // --- status and clock, re-checked every transaction ---------------
         if state.status()? != Status::Live {
@@ -108,11 +116,15 @@ pub fn buy(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
             &state.stock_mint,
             buyer.address(),
         )?;
+        // The creator's fee can only go to the creator's own account: a buyer
+        // building their own transaction must not be able to pay it to
+        // themselves.
         if fee > 0 {
-            token_balance_for_mint(
+            token_balance_checked(
                 creator_fee,
                 &state.stock_token_program,
                 &state.stock_mint,
+                &state.creator,
             )?;
         }
         // The protocol's cut can only go to the treasury's own account.

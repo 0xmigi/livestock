@@ -24,6 +24,8 @@ pub const TOKEN_PROGRAM: Address =
 pub const TOKEN_2022_PROGRAM: Address =
     Address::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 pub const SYSTEM_PROGRAM: Address = Address::from_str_const("11111111111111111111111111111111");
+pub const ASSOCIATED_TOKEN_PROGRAM: Address =
+    Address::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 pub const MINT_LEN: usize = 82;
 pub const TOKEN_ACCOUNT_LEN: usize = 165;
@@ -55,6 +57,8 @@ pub enum Delegate {
 /// Base mint, padding to the token account length, the account-type byte,
 /// and one 32-byte extension with its 4-byte TLV header.
 pub const MINT_WITH_DELEGATE_LEN: usize = 165 + 1 + 4 + 32;
+/// The same with a second 32-byte extension: a mint close authority.
+pub const MINT_WITH_DELEGATE_AND_CLOSE_LEN: usize = MINT_WITH_DELEGATE_LEN + 4 + 32;
 
 pub struct Env {
     pub svm: LiteSVM,
@@ -175,12 +179,78 @@ impl Env {
         (mint.pubkey(), narrative)
     }
 
-    /// The vault is supplied at creation rather than derived, so tests track
-    /// it the same way the client does.
+    /// The vault: the narrative PDA's associated token account for the
+    /// stock, which is the only vault `create_narrative` accepts.
     pub fn create_vault(&mut self, narrative: &Address) -> Address {
         let mint = self.stock_mint;
         let program = self.stock_program;
+        let ata = Address::find_program_address(
+            &[narrative.as_ref(), program.as_ref(), mint.as_ref()],
+            &ASSOCIATED_TOKEN_PROGRAM,
+        )
+        .0;
+        let creator = self.creator.insecure_clone();
+        let ix = Instruction {
+            program_id: ASSOCIATED_TOKEN_PROGRAM,
+            accounts: vec![
+                AccountMeta::new(creator.pubkey(), true),
+                AccountMeta::new(ata, false),
+                AccountMeta::new_readonly(*narrative, false),
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+                AccountMeta::new_readonly(program, false),
+            ],
+            data: vec![1], // CreateIdempotent
+        };
+        self.send(&[ix], &[&creator]).expect("create vault ata");
+        ata
+    }
+
+    /// A vault the program must refuse: a plain keypair token account owned by
+    /// the narrative PDA. Its creator keeps the close authority, so it could
+    /// be closed while empty and re-created under another owner.
+    pub fn create_keypair_vault(&mut self, narrative: &Address) -> Address {
+        let mint = self.stock_mint;
+        let program = self.stock_program;
         self.create_token_account_with(narrative, &mint, program)
+    }
+
+    /// A narrative mint that is right in every way the program checked before
+    /// v0.2.1, plus a mint close authority held by the creator: enough to
+    /// delete the mint at zero supply and put a different one at its address.
+    pub fn create_narrative_mint_with_close_authority(&mut self) -> (Address, Address) {
+        let mint = Keypair::new();
+        let narrative = Self::narrative_for(&mint.pubkey());
+        let space = MINT_WITH_DELEGATE_AND_CLOSE_LEN;
+        let rent = self.svm.minimum_balance_for_rent_exemption(space);
+        let creator_key = self.creator.pubkey();
+
+        let create = solana_system_interface::instruction::create_account(
+            &creator_key,
+            &mint.pubkey(),
+            rent,
+            space as u64,
+            &NARRATIVE_TOKEN_PROGRAM,
+        );
+        let mut close = vec![25u8, 1]; // InitializeMintCloseAuthority, Some(creator)
+        close.extend_from_slice(creator_key.as_ref());
+        let mut delegate = vec![35u8]; // InitializePermanentDelegate
+        delegate.extend_from_slice(narrative.as_ref());
+        let mut init = vec![20u8, 0]; // InitializeMint2, 0 decimals
+        init.extend_from_slice(narrative.as_ref());
+        init.push(0); // no freeze authority
+        let ixs: Vec<Instruction> = [close, delegate, init]
+            .into_iter()
+            .map(|data| Instruction {
+                program_id: NARRATIVE_TOKEN_PROGRAM,
+                accounts: vec![AccountMeta::new(mint.pubkey(), false)],
+                data,
+            })
+            .collect();
+        let creator = self.creator.insecure_clone();
+        self.send(&[create, ixs[0].clone(), ixs[1].clone(), ixs[2].clone()], &[&creator, &mint])
+            .expect("create narrative mint with close authority");
+        (mint.pubkey(), narrative)
     }
 
     // --- plumbing ---------------------------------------------------------

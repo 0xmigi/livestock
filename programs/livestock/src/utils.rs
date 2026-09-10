@@ -29,6 +29,8 @@ const MINT_TLV_START: usize = 166;
 const ACCOUNT_TYPE_MINT: u8 = 1;
 const EXTENSION_UNINITIALIZED: u16 = 0;
 const EXTENSION_PERMANENT_DELEGATE: u16 = 12;
+const EXTENSION_METADATA_POINTER: u16 = 18;
+const EXTENSION_TOKEN_METADATA: u16 = 19;
 
 fn address_at(data: &[u8], offset: usize) -> Address {
     let mut bytes = [0u8; 32];
@@ -40,6 +42,15 @@ fn address_at(data: &[u8], offset: usize) -> Address {
 /// search costs up to 255 hashes.
 pub fn derive_pda(seeds: &[&[u8]]) -> (Address, u8) {
     Address::find_program_address(seeds, &crate::ID)
+}
+
+/// The associated token account of `owner` for `mint` under `token_program`.
+pub fn associated_token_address(owner: &Address, token_program: &Address, mint: &Address) -> Address {
+    Address::find_program_address(
+        &[owner.as_ref(), token_program.as_ref(), mint.as_ref()],
+        &crate::state::ASSOCIATED_TOKEN_PROGRAM,
+    )
+    .0
 }
 
 /// Confirms `account` is the PDA for `seeds + bump`, using a stored bump rather
@@ -193,17 +204,26 @@ pub fn read_mint(
     })
 }
 
-/// The permanent delegate of a Token-2022 mint, if the extension is present.
+/// The permanent delegate of a Token-2022 mint, if the extension is present,
+/// and a check that the mint carries nothing else this program cannot live
+/// with.
 ///
 /// The delegate can burn or move any holder's tokens. For a narrative mint it
 /// must be the narrative itself: that is what lets `convert` pay every holder
 /// out at expiry without a signature from each of them.
+///
+/// Every other extension is refused except the metadata pair the client
+/// writes. A mint close authority in particular would let the creator delete
+/// the mint while its supply is still zero, right after creation, and put a
+/// mint with a different delegate at the same address; nothing after creation
+/// reads the mint again, so it must be pinned down here.
 pub fn mint_permanent_delegate(account: &AccountView) -> Result<Option<Address>, ProgramError> {
     let data = account.try_borrow()?;
     if data.len() <= MINT_TLV_START || data[MINT_ACCOUNT_TYPE_OFFSET] != ACCOUNT_TYPE_MINT {
         return Ok(None);
     }
 
+    let mut delegate = None;
     let mut cursor = MINT_TLV_START;
     while cursor + 4 <= data.len() {
         let kind = u16::from_le_bytes([data[cursor], data[cursor + 1]]);
@@ -216,15 +236,19 @@ pub fn mint_permanent_delegate(account: &AccountView) -> Result<Option<Address>,
             .checked_add(len)
             .filter(|end| *end <= data.len())
             .ok_or(ProgramError::InvalidAccountData)?;
-        if kind == EXTENSION_PERMANENT_DELEGATE {
-            if len != 32 {
-                return Err(ProgramError::InvalidAccountData);
+        match kind {
+            EXTENSION_PERMANENT_DELEGATE => {
+                if len != 32 {
+                    return Err(ProgramError::InvalidAccountData);
+                }
+                delegate = Some(address_at(&data, start));
             }
-            return Ok(Some(address_at(&data, start)));
+            EXTENSION_METADATA_POINTER | EXTENSION_TOKEN_METADATA => {}
+            _ => return Err(MarketError::BadParameters.into()),
         }
         cursor = end;
     }
-    Ok(None)
+    Ok(delegate)
 }
 
 /// Reads a token account's owner and balance, checking its program and mint.
