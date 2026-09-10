@@ -13,7 +13,7 @@ export const BIO_MAX_CHARS = 160;
 export const NAME_MAX_BYTES = 32;
 /** The program's cap on a ticker. Letters only, so it works as a cashtag on X. */
 export const SYMBOL_MAX_LETTERS = 10;
-export const TAGLINE = "Build narratives that expire into stocks.";
+export const TAGLINE = "Narrative tokens that expire into stocks.";
 
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 

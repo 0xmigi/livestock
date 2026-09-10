@@ -94,7 +94,7 @@ export default function Markets() {
         <section className="grid pb-6 lg:grid-cols-3 lg:gap-x-3">
           {/* Headline on its own row; the button and the chart share the next, so the chart hangs from the button's line. */}
           <h1 className="max-w-2xl text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-900 sm:text-5xl lg:col-span-3 lg:row-start-1">
-            Build narratives
+            Narrative tokens
             <br />
             <span className="text-neutral-400">that expire into stocks</span>
           </h1>
