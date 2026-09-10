@@ -36,6 +36,12 @@ export const LOCAL_NAME = /^[a-z0-9-]+\.(png|jpg|webp|gif|json)$/;
 
 /** The off-chain document a wallet fetches from the mint's URI. */
 export type TokenMetadata = {
+  /**
+   * The mint this document belongs to. Written at upload and checked before
+   * any edit: a mint's URI is whatever its creator chose, so the URI alone
+   * cannot say which narrative may rewrite the file behind it.
+   */
+  mint?: string;
   name: string;
   symbol: string;
   description: string;
@@ -104,16 +110,23 @@ async function putFile(file: string, body: Blob | string, contentType: string): 
   }
 }
 
+/** A JSON body may only replace a .json file, an image only an image. */
+function sameKind(file: string, contentType: string): boolean {
+  const isJson = file.endsWith(".json");
+  return isJson === (contentType === "application/json");
+}
+
 /**
  * Rewrites the file behind a URL this app issued, keeping the URL. Refuses
- * anything hosted elsewhere: it is not ours to change.
+ * anything hosted elsewhere: it is not ours to change. Callers must have
+ * already established that the file belongs to whoever is asking.
  */
 export async function overwrite(url: string, body: Blob | string, contentType: string): Promise<void> {
   const parsed = new URL(url);
 
   if (parsed.pathname.startsWith("/api/uploads/")) {
     const file = parsed.pathname.slice("/api/uploads/".length);
-    if (!LOCAL_NAME.test(file)) throw new Error("Not a file this app serves.");
+    if (!LOCAL_NAME.test(file) || !sameKind(file, contentType)) throw new Error("Not a file this app serves.");
     await mkdir(LOCAL_UPLOADS, { recursive: true });
     await writeFile(path.join(LOCAL_UPLOADS, file), await toBytes(body));
     return;
@@ -121,7 +134,7 @@ export async function overwrite(url: string, body: Blob | string, contentType: s
 
   if (FILES_URL && FILES_SECRET && url.startsWith(`${FILES_URL}/files/`)) {
     const file = url.slice(`${FILES_URL}/files/`.length);
-    if (!LOCAL_NAME.test(file)) throw new Error("Not a file this app serves.");
+    if (!LOCAL_NAME.test(file) || !sameKind(file, contentType)) throw new Error("Not a file this app serves.");
     await putFile(file, body, contentType);
     return;
   }

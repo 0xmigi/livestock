@@ -5,6 +5,11 @@
  * mint's URI points at is not, and this app hosts it, so the creator can
  * rewrite it in place. Proof of who is asking is a signed message from the
  * creator's wallet; no transaction, no fee.
+ *
+ * The URI is whatever the creator put on their mint, so it cannot decide
+ * which file they may rewrite: anyone could point a mint of their own at
+ * another narrative's file. The file decides. Every document this app
+ * uploads names its mint, and only that mint's creator may replace it.
  */
 
 import { NextResponse } from "next/server";
@@ -82,7 +87,21 @@ export async function POST(request: Request, context: { params: Promise<{ mint: 
       .then((r) => (r.ok ? r.json() : {}))
       .catch(() => ({}))) as Partial<TokenMetadata>;
 
-    // 4. Apply the edit.
+    // 4. The file belongs to this mint. A document without a mint predates
+    //    this check and cannot be told apart from someone else's, so it
+    //    stays as it is.
+    if (current.mint !== mint) {
+      return NextResponse.json(
+        {
+          error: current.mint
+            ? "That metadata file belongs to a different narrative."
+            : "This narrative's metadata was created before edits were bound to the mint, so it cannot be edited here.",
+        },
+        { status: 403 },
+      );
+    }
+
+    // 5. Apply the edit.
     let image = current.image ?? "";
     const upload = form.get("image");
     if (upload instanceof File && upload.size > 0) {
@@ -113,6 +132,7 @@ export async function POST(request: Request, context: { params: Promise<{ mint: 
     };
 
     const next: TokenMetadata = {
+      mint,
       name: narrative.name,
       symbol: narrative.symbol,
       description: (text("description") ?? current.description ?? "").slice(0, BIO_MAX_CHARS),

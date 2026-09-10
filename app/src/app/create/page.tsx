@@ -242,12 +242,17 @@ export default function Create() {
       const cleanName = name.trim();
       const cleanSymbol = symbol.trim().toUpperCase();
 
-      // 1. Image and JSON first: the mint needs the URI baked in.
+      // 1. The mint is a keypair, so the narrative address hangs off it. It
+      //    is drawn first so the metadata file can be bound to it.
+      const mint = await generateKeyPairSigner();
+
+      // 2. Image and JSON next: the mint needs the URI baked in.
       setProgress("Uploading image");
       const form = new FormData();
       form.set("image", image);
       form.set("name", cleanName);
       form.set("symbol", cleanSymbol);
+      form.set("mint", mint.address);
       // One source link; which kind it is can be told from the host.
       const links = classifySource(source);
       form.set("description", bio.trim());
@@ -261,9 +266,8 @@ export default function Create() {
         throw new Error(uploaded.error ?? "Upload failed.");
       }
 
-      // 2. The mint is a keypair, so the narrative address hangs off it.
+      // 3. Everything else hangs off the mint.
       setProgress("Preparing the mint");
-      const mint = await generateKeyPairSigner();
       const [narrative] = await findNarrative(mint.address);
       const stockTokenProgram = await fetchStockTokenProgram(stock.mint);
       const [vault] = await findVault(narrative, stock.mint, stockTokenProgram);

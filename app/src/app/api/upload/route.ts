@@ -15,6 +15,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { address } from "@solana/kit";
 
 import { BIO_MAX_CHARS } from "@/lib/config";
 import {
@@ -41,6 +42,14 @@ export async function POST(request: Request) {
       { error: "Name and ticker are required." },
       { status: 400 },
     );
+  }
+  // The mint the document is for. Only that mint's creator may rewrite it
+  // later (see /api/narrative/[mint]); the URI on a mint proves nothing.
+  let mint: string;
+  try {
+    mint = address(String(form.get("mint") ?? ""));
+  } catch {
+    return NextResponse.json({ error: "The mint address is required." }, { status: 400 });
   }
 
   const image = form.get("image");
@@ -76,6 +85,7 @@ export async function POST(request: Request) {
     };
 
     const metadata: TokenMetadata = {
+      mint,
       name,
       symbol,
       description: String(form.get("description") ?? "").trim().slice(0, BIO_MAX_CHARS),
