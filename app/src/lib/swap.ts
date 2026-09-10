@@ -35,6 +35,12 @@ const JUPITER_API = "https://lite-api.jup.ag/swap/v1";
 /** Allowed slippage on the Jupiter leg. The program's own cap (`maxStockIn`) guards the buy. */
 const JUPITER_SLIPPAGE_BPS = 100;
 
+const COMPUTE_BUDGET_PROGRAM = address("ComputeBudget111111111111111111111111111111");
+/** Compute units the rest of the buy needs on top of the swap: three token accounts and the program. */
+const BUY_COMPUTE_UNITS = 250_000;
+/** The runtime's cap per transaction. */
+const MAX_COMPUTE_UNITS = 1_400_000;
+
 export type SwapQuote = {
   lamportsIn: bigint;
   /** What the swap is expected to deliver. */
@@ -177,6 +183,23 @@ async function jupiterQuote(stock: Stock, lamports: bigint): Promise<SwapQuote> 
   };
 }
 
+/**
+ * Jupiter sizes its compute-unit limit for the swap alone (`dynamicComputeUnitLimit`).
+ * The buy runs in the same transaction, so raise the limit by what it needs;
+ * the price instruction and anything else pass through.
+ */
+function withRoomForBuy(ix: Instruction): Instruction {
+  if (ix.programAddress !== COMPUTE_BUDGET_PROGRAM || !ix.data || ix.data[0] !== 2 || ix.data.length < 5) {
+    return ix;
+  }
+  const view = new DataView(ix.data.buffer, ix.data.byteOffset, ix.data.byteLength);
+  const limit = Math.min(MAX_COMPUTE_UNITS, view.getUint32(1, true) + BUY_COMPUTE_UNITS);
+  const data = new Uint8Array(5);
+  data[0] = 2;
+  new DataView(data.buffer).setUint32(1, limit, true);
+  return { ...ix, data };
+}
+
 function toInstruction(ix: JupiterInstruction): Instruction {
   return {
     programAddress: address(ix.programId),
@@ -232,7 +255,7 @@ async function jupiterLeg(stock: Stock, owner: Address, quote: SwapQuote): Promi
 
   const destination = await ownerStockAta(stock, owner);
   const instructions: Instruction[] = [
-    ...(body.computeBudgetInstructions ?? []).map(toInstruction),
+    ...(body.computeBudgetInstructions ?? []).map(toInstruction).map(withRoomForBuy),
     ...(body.setupInstructions ?? []).map(toInstruction),
     // Jupiter creates the output account for classic SPL mints; tokenized
     // stocks are Token-2022, so make sure ourselves.
