@@ -261,9 +261,18 @@ async function buildSeries(n: Narrative, snapshots: Snapshot[], exit: Exit): Pro
   const times = new Set<number>([t0, t1]);
   for (const s of stops) times.add(s.t);
   for (const c of candles) if (c.time > t0 && c.time < t1) times.add(c.time);
+  // The last point is what they actually walked away with: a conversion pays
+  // the vault's average price, not the sell formula, so the line ends at the
+  // real payout rather than at what a sale would have fetched.
+  const receivedShares = (Number(exit.received) / Number(exit.cost)) * stockShares;
   return [...times]
     .sort((a, b) => a - b)
-    .map((t) => ({ t, narrative: narrativeShares(supplyAt(t)), stock: stockShares, price: priceAt(t) }));
+    .map((t) => ({
+      t,
+      narrative: t === t1 ? receivedShares : narrativeShares(supplyAt(t)),
+      stock: stockShares,
+      price: priceAt(t),
+    }));
 }
 
 /** Narratives replayed at once. Each is a burst of RPC calls. */
