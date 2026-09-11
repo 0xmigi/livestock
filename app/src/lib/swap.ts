@@ -11,6 +11,7 @@
 
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
+  ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
   findAssociatedTokenPda,
   getCreateAssociatedTokenIdempotentInstruction,
   getTransferCheckedInstruction,
@@ -34,7 +35,6 @@ export const LAMPORTS_PER_SOL = 1_000_000_000n;
 const JUPITER_API = "https://lite-api.jup.ag/swap/v1";
 /** Allowed slippage on the Jupiter leg. The program's own cap (`maxStockIn`) guards the buy. */
 const JUPITER_SLIPPAGE_BPS = 100;
-const ASSOCIATED_TOKEN_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 
 const COMPUTE_BUDGET_PROGRAM = address("ComputeBudget111111111111111111111111111111");
 /** Compute units the rest of the buy needs on top of the swap: three token accounts and the program. */
@@ -271,7 +271,7 @@ async function jupiterLeg(stock: Stock, owner: Address, quote: SwapQuote): Promi
   // included. Make sure ourselves only when it did not: every instruction
   // costs bytes the route may need.
   const createsDestination = setup.some(
-    (ix) => ix.programId === ASSOCIATED_TOKEN_PROGRAM && ix.accounts[1]?.pubkey === destination,
+    (ix) => ix.programId === ASSOCIATED_TOKEN_PROGRAM_ADDRESS && ix.accounts[1]?.pubkey === destination,
   );
   const instructions: Instruction[] = [
     ...(body.computeBudgetInstructions ?? []).map(toInstruction).map(withRoomForBuy),
