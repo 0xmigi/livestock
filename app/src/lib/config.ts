@@ -67,6 +67,15 @@ export const TOKEN_2022_PROGRAM = address(
   "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
 );
 
+/**
+ * The most accounts a Jupiter route may touch. A buy shares its transaction
+ * with the swap, and the buy's own accounts and instructions take about 350
+ * of the 1232 bytes; a three-hop route uses the rest and more. Two hops fit.
+ * The listing probe applies the same cap, so a listed stock is one a buy can
+ * actually reach.
+ */
+export const JUPITER_MAX_ACCOUNTS = 30;
+
 // --- stocks ---------------------------------------------------------------
 
 /** A tokenized stock narratives can expire into. */

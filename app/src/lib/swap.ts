@@ -25,7 +25,7 @@ import {
   type Instruction,
 } from "@solana/kit";
 
-import { CLUSTER, rpc } from "./config";
+import { CLUSTER, JUPITER_MAX_ACCOUNTS, rpc } from "./config";
 import type { RemoteSigner } from "./tx";
 
 export const SOL_MINT = address("So11111111111111111111111111111111111111112");
@@ -34,6 +34,7 @@ export const LAMPORTS_PER_SOL = 1_000_000_000n;
 const JUPITER_API = "https://lite-api.jup.ag/swap/v1";
 /** Allowed slippage on the Jupiter leg. The program's own cap (`maxStockIn`) guards the buy. */
 const JUPITER_SLIPPAGE_BPS = 100;
+const ASSOCIATED_TOKEN_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 
 const COMPUTE_BUDGET_PROGRAM = address("ComputeBudget111111111111111111111111111111");
 /** Compute units the rest of the buy needs on top of the swap: three token accounts and the program. */
@@ -56,6 +57,14 @@ export type SwapLeg = {
   instructions: Instruction[];
   remoteSigners: RemoteSigner[];
   lookupTables: Record<Address, Address[]>;
+};
+
+export type QuoteOptions = {
+  /**
+   * Mainnet: a single-pool route only. Smaller than any multi-hop route, so
+   * it is the fallback when the route Jupiter chose leaves the buy no room.
+   */
+  direct?: boolean;
 };
 
 type Stock = { mint: Address; decimals: number; tokenProgram: Address };
@@ -145,9 +154,11 @@ async function faucetLeg(stock: Stock, owner: Address, quote: SwapQuote): Promis
 
 // --- mainnet: Jupiter -----------------------------------------------------
 //
-// Not yet exercised against a live wallet: written from the swap API's
-// documented shapes (`/quote`, `/swap-instructions`). Treat the first mainnet
-// buy as the test.
+// Jupiter picks a fresh route per quote, and its size varies: a three-hop
+// route with its setup accounts ran a buy to 1269 bytes on mainnet, past the
+// 1232-byte limit. The quote is capped at `JUPITER_MAX_ACCOUNTS`, which keeps
+// routes to two hops, and the buy measures the result before signing and
+// re-quotes with `direct` if it still does not fit.
 
 type JupiterQuote = { inAmount: string; outAmount: string; otherAmountThreshold: string };
 
@@ -165,10 +176,11 @@ type JupiterSwap = {
   addressLookupTableAddresses?: string[];
 };
 
-async function jupiterQuote(stock: Stock, lamports: bigint): Promise<SwapQuote> {
+async function jupiterQuote(stock: Stock, lamports: bigint, options: QuoteOptions): Promise<SwapQuote> {
+  const route = options.direct ? "&onlyDirectRoutes=true" : `&maxAccounts=${JUPITER_MAX_ACCOUNTS}`;
   const url =
     `${JUPITER_API}/quote?inputMint=${SOL_MINT}&outputMint=${stock.mint}` +
-    `&amount=${lamports}&slippageBps=${JUPITER_SLIPPAGE_BPS}`;
+    `&amount=${lamports}&slippageBps=${JUPITER_SLIPPAGE_BPS}${route}`;
   const response = await fetch(url);
   const body = (await response.json()) as Partial<JupiterQuote> & { error?: string };
   if (!response.ok || !body.outAmount || !body.otherAmountThreshold) {
@@ -254,18 +266,27 @@ async function jupiterLeg(stock: Stock, owner: Address, quote: SwapQuote): Promi
   }
 
   const destination = await ownerStockAta(stock, owner);
+  const setup = body.setupInstructions ?? [];
+  // Jupiter's setup creates the output account when it is missing, Token-2022
+  // included. Make sure ourselves only when it did not: every instruction
+  // costs bytes the route may need.
+  const createsDestination = setup.some(
+    (ix) => ix.programId === ASSOCIATED_TOKEN_PROGRAM && ix.accounts[1]?.pubkey === destination,
+  );
   const instructions: Instruction[] = [
     ...(body.computeBudgetInstructions ?? []).map(toInstruction).map(withRoomForBuy),
-    ...(body.setupInstructions ?? []).map(toInstruction),
-    // Jupiter creates the output account for classic SPL mints; tokenized
-    // stocks are Token-2022, so make sure ourselves.
-    getCreateAssociatedTokenIdempotentInstruction({
-      payer: createNoopSigner(owner),
-      ata: destination,
-      owner,
-      mint: stock.mint,
-      tokenProgram: stock.tokenProgram,
-    }),
+    ...setup.map(toInstruction),
+    ...(createsDestination
+      ? []
+      : [
+          getCreateAssociatedTokenIdempotentInstruction({
+            payer: createNoopSigner(owner),
+            ata: destination,
+            owner,
+            mint: stock.mint,
+            tokenProgram: stock.tokenProgram,
+          }),
+        ]),
     toInstruction(body.swapInstruction),
     ...(body.cleanupInstruction ? [toInstruction(body.cleanupInstruction)] : []),
   ];
@@ -280,8 +301,8 @@ async function jupiterLeg(stock: Stock, owner: Address, quote: SwapQuote): Promi
 // --- the one entry point --------------------------------------------------
 
 /** What `lamports` of SOL turns into, in this narrative's stock. */
-export function quoteSwap(stock: Stock, lamports: bigint): Promise<SwapQuote> {
-  return CLUSTER === "mainnet" ? jupiterQuote(stock, lamports) : faucetQuote(stock, lamports);
+export function quoteSwap(stock: Stock, lamports: bigint, options: QuoteOptions = {}): Promise<SwapQuote> {
+  return CLUSTER === "mainnet" ? jupiterQuote(stock, lamports, options) : faucetQuote(stock, lamports);
 }
 
 /** The instructions that perform a quoted swap for `owner`, plus any co-signers and lookup tables. */

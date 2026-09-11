@@ -22,6 +22,7 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   type Address,
+  type Blockhash,
   type Instruction,
   type KeyPairSigner,
   type SignatureBytes,
@@ -48,6 +49,58 @@ export type BuildOptions = {
   lookupTables?: Record<Address, Address[]>;
 };
 
+/** The most bytes a transaction may be on the wire, signatures included. */
+export const TRANSACTION_SIZE_LIMIT = 1232;
+
+/** Thrown before signing when the compiled transaction cannot be sent. */
+export class TransactionTooLarge extends Error {
+  readonly bytes: number;
+  constructor(bytes: number) {
+    super(`This transaction is ${bytes} bytes; the network takes at most ${TRANSACTION_SIZE_LIMIT}.`);
+    this.bytes = bytes;
+  }
+}
+
+type Lifetime = Parameters<typeof setTransactionMessageLifetimeUsingBlockhash>[0];
+
+/** Any blockhash gives the same size, so measuring needs no RPC round trip. */
+const PLACEHOLDER_LIFETIME: Lifetime = {
+  blockhash: "11111111111111111111111111111111" as Blockhash,
+  lastValidBlockHeight: 0n,
+};
+
+function compile(
+  feePayer: Address,
+  instructions: Instruction[],
+  lookupTables: Record<Address, Address[]>,
+  lifetime: Lifetime,
+): Transaction {
+  const message = pipe(
+    createTransactionMessage({ version: 0 }),
+    (m) => setTransactionMessageFeePayer(feePayer, m),
+    (m) => setTransactionMessageLifetimeUsingBlockhash(lifetime, m),
+    (m) => appendTransactionMessageInstructions(instructions, m),
+    (m) =>
+      Object.keys(lookupTables).length > 0
+        ? compressTransactionMessageUsingAddressLookupTables(m, lookupTables)
+        : m,
+  );
+  return compileTransaction(message);
+}
+
+/**
+ * How many bytes `instructions` come to once signed, every signer's slot
+ * included. Cheap: no network, no signing.
+ */
+export function transactionSize(
+  feePayer: Address,
+  instructions: Instruction[],
+  options: BuildOptions = {},
+): number {
+  const compiled = compile(feePayer, instructions, options.lookupTables ?? {}, PLACEHOLDER_LIFETIME);
+  return getTransactionEncoder().encode(compiled).length;
+}
+
 /**
  * Compiles instructions into wire bytes for `feePayer` to sign.
  *
@@ -60,20 +113,14 @@ export async function buildTransaction(
   options: BuildOptions = {},
 ): Promise<Uint8Array> {
   const { localSigners = [], remoteSigners = [], lookupTables = {} } = options;
+
+  // Caught here rather than by the RPC, so the wallet never asks for a
+  // signature on something that cannot be sent.
+  const size = transactionSize(feePayer, instructions, options);
+  if (size > TRANSACTION_SIZE_LIMIT) throw new TransactionTooLarge(size);
+
   const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayer(feePayer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
-    (m) => appendTransactionMessageInstructions(instructions, m),
-    (m) =>
-      Object.keys(lookupTables).length > 0
-        ? compressTransactionMessageUsingAddressLookupTables(m, lookupTables)
-        : m,
-  );
-
-  const compiled = compileTransaction(message);
+  const compiled = compile(feePayer, instructions, lookupTables, latestBlockhash);
   let signed: Transaction = localSigners.length
     ? await partiallySignTransaction(
         localSigners.map((s) => s.keyPair),

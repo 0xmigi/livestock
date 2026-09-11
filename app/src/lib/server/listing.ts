@@ -15,6 +15,7 @@
 import { address, type Address } from "@solana/kit";
 import { fetchAllMaybeMint } from "@solana-program/token-2022";
 
+import { JUPITER_MAX_ACCOUNTS } from "../config";
 import { rpc } from "./rpc";
 
 /** Why a stock is not pickable, in the words the picker shows. */
@@ -98,7 +99,9 @@ type Probe = { mint: string; decimals: number; priceUsd?: number };
 /** What `lamports` of SOL buys, or false for no route, or null for no answer. */
 async function quote(mint: string, lamports: number): Promise<{ out: number; impact: number } | false | null> {
   try {
-    const url = `${JUPITER_QUOTE}?inputMint=${SOL_MINT}&outputMint=${mint}&amount=${lamports}&slippageBps=100`;
+    const url =
+      `${JUPITER_QUOTE}?inputMint=${SOL_MINT}&outputMint=${mint}&amount=${lamports}` +
+      `&slippageBps=100&maxAccounts=${JUPITER_MAX_ACCOUNTS}`;
     const response = await fetch(url, { cache: "no-store" });
     if (response.status === 400) return false; // TOKEN_NOT_TRADABLE and friends: no route.
     if (response.status === 429) probeRestsUntil = Date.now() + BACKOFF_MS;

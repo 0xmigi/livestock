@@ -51,12 +51,30 @@ import {
 import type { NarrativeRow, Position } from "@/lib/narratives";
 import { useSolPrice } from "@/lib/stocks";
 import { buildSwapLeg, LAMPORTS_PER_SOL, quoteSwap, type SwapQuote } from "@/lib/swap";
-import { signAndSend, toUserMessage, type BuildOptions } from "@/lib/tx";
+import {
+  signAndSend,
+  toUserMessage,
+  TRANSACTION_SIZE_LIMIT,
+  transactionSize,
+  type BuildOptions,
+} from "@/lib/tx";
 import { Button, Notice, Panel } from "./ui";
 import { refreshSolBalances, useSolBalance } from "./wallet";
 
 /** SOL kept back for fees and the token accounts a first buy creates. */
 const SOL_RESERVE = 0.01;
+
+/** A transaction, ready to compile. Built inside `run` so its failures show like any other. */
+type Prepared = { instructions: Instruction[]; options?: BuildOptions };
+
+/** What `stockIn` of the stock buys on the curve, and the most the buy may spend for it. */
+function sizeBuy(narrative: NarrativeRow, stockIn: bigint) {
+  const tokens = tokensForStock(narrative, narrative.supply, stockIn, narrative.feeBps, narrative.protocolFeeBps);
+  const cost = tokens > 0n ? buyCost(narrative, tokens) : 0n;
+  const fee = applyBps(cost, narrative.feeBps);
+  const protocolFee = applyBps(cost, narrative.protocolFeeBps);
+  return { tokens, cost, fee, protocolFee, maxIn: cost + fee + protocolFee };
+}
 
 type Props = {
   narrative: NarrativeRow;
@@ -74,7 +92,7 @@ function useAction(onDone: () => void) {
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
 
-  const run = async (owner: Address, instructions: Instruction[], options: BuildOptions = {}) => {
+  const run = async (owner: Address, prepare: () => Promise<Prepared>) => {
     const wallet = wallets.find((w) => w.address === owner) ?? wallets[0];
     if (!wallet) {
       setError("No Solana wallet connected.");
@@ -86,6 +104,7 @@ function useAction(onDone: () => void) {
     setSignature(null);
 
     try {
+      const { instructions, options = {} } = await prepare();
       const sig = await signAndSend(
         owner,
         instructions,
@@ -260,11 +279,7 @@ export function BuyPanel({
   const stockIn = quote?.minStockOut ?? (stockPrice > 0 ? usdToStock(usd || 0, stockPrice, stock.decimals) : 0n);
   const left = remaining(narrative.supply);
   const soldOut = left === 0n;
-  const tokens = tokensForStock(narrative, narrative.supply, stockIn, narrative.feeBps, narrative.protocolFeeBps);
-  const cost = tokens > 0n ? buyCost(narrative, tokens) : 0n;
-  const fee = applyBps(cost, narrative.feeBps);
-  const protocolFee = applyBps(cost, narrative.protocolFeeBps);
-  const maxIn = cost + fee + protocolFee;
+  const { tokens, cost, fee, protocolFee, maxIn } = sizeBuy(narrative, stockIn);
   const solIn = Number(lamports) / Number(LAMPORTS_PER_SOL);
 
   // Price impact: how far your own buy pushes the marginal price.
@@ -298,47 +313,67 @@ export function BuyPanel({
     const creatorFee = await ataFor(narrative.stockMint, narrative.creator, program);
     const [treasury] = await findTreasuryStockAccount(narrative.stockMint, program);
 
-    // The swap runs first; whatever it delivers above `maxIn` stays in the wallet.
-    const swap = await buildSwapLeg(swapStock, owner, quote);
+    // The swap runs first; whatever it delivers above `maxIn` stays in the
+    // wallet. The buy is sized from the quote it rides on, so a re-quote
+    // re-sizes it.
+    const assemble = async (q: SwapQuote): Promise<Prepared> => {
+      const swap = await buildSwapLeg(swapStock, owner, q);
+      const sized = sizeBuy(narrative, q.minStockOut);
+      return {
+        instructions: [
+          ...swap.instructions,
+          getCreateAssociatedTokenIdempotentInstruction({
+            payer: createNoopSigner(owner),
+            ata: tokenAta,
+            owner,
+            mint: narrative.narrativeMint,
+            tokenProgram: TOKEN_2022_PROGRAM,
+          }),
+          getCreateAssociatedTokenIdempotentInstruction({
+            payer: createNoopSigner(owner),
+            ata: creatorFee,
+            owner: narrative.creator,
+            mint: narrative.stockMint,
+            tokenProgram: program,
+          }),
+          getCreateAssociatedTokenIdempotentInstruction({
+            payer: createNoopSigner(owner),
+            ata: treasury,
+            owner: TREASURY,
+            mint: narrative.stockMint,
+            tokenProgram: program,
+          }),
+          getBuyInstruction({
+            buyer: owner,
+            narrative: narrative.address,
+            narrativeMint: narrative.narrativeMint,
+            buyerTokenAccount: tokenAta,
+            buyerStockAccount: stockAta,
+            vault: narrative.vault,
+            creatorFeeAccount: creatorFee,
+            treasuryStockAccount: treasury,
+            stockMint: narrative.stockMint,
+            stockTokenProgram: program,
+            tokensOut: sized.tokens,
+            maxStockIn: sized.maxIn,
+          }),
+        ],
+        options: { remoteSigners: swap.remoteSigners, lookupTables: swap.lookupTables },
+      };
+    };
 
-    await run(owner, [
-      ...swap.instructions,
-      getCreateAssociatedTokenIdempotentInstruction({
-        payer: createNoopSigner(owner),
-        ata: tokenAta,
-        owner,
-        mint: narrative.narrativeMint,
-        tokenProgram: TOKEN_2022_PROGRAM,
-      }),
-      getCreateAssociatedTokenIdempotentInstruction({
-        payer: createNoopSigner(owner),
-        ata: creatorFee,
-        owner: narrative.creator,
-        mint: narrative.stockMint,
-        tokenProgram: program,
-      }),
-      getCreateAssociatedTokenIdempotentInstruction({
-        payer: createNoopSigner(owner),
-        ata: treasury,
-        owner: TREASURY,
-        mint: narrative.stockMint,
-        tokenProgram: program,
-      }),
-      getBuyInstruction({
-        buyer: owner,
-        narrative: narrative.address,
-        narrativeMint: narrative.narrativeMint,
-        buyerTokenAccount: tokenAta,
-        buyerStockAccount: stockAta,
-        vault: narrative.vault,
-        creatorFeeAccount: creatorFee,
-        treasuryStockAccount: treasury,
-        stockMint: narrative.stockMint,
-        stockTokenProgram: program,
-        tokensOut: tokens,
-        maxStockIn: maxIn,
-      }),
-    ], { remoteSigners: swap.remoteSigners, lookupTables: swap.lookupTables });
+    await run(owner, async () => {
+      const prepared = await assemble(quote);
+      if (transactionSize(owner, prepared.instructions, prepared.options) <= TRANSACTION_SIZE_LIMIT) {
+        return prepared;
+      }
+      // Jupiter's route is chosen per quote, and a long one leaves no room
+      // for the buy after it. A single-pool route always does; the amount is
+      // within the slippage the quote already allowed.
+      const direct = await quoteSwap(swapStock, lamports, { direct: true });
+      setQuote(direct);
+      return assemble(direct);
+    });
   };
 
   const sell = async () => {
@@ -350,27 +385,29 @@ export function BuyPanel({
       TOKEN_2022_PROGRAM,
     );
 
-    await run(owner, [
-      getCreateAssociatedTokenIdempotentInstruction({
-        payer: createNoopSigner(owner),
-        ata: stockAta,
-        owner,
-        mint: narrative.stockMint,
-        tokenProgram: program,
-      }),
-      getSellInstruction({
-        seller: owner,
-        narrative: narrative.address,
-        narrativeMint: narrative.narrativeMint,
-        sellerTokenAccount: tokenAta,
-        sellerStockAccount: stockAta,
-        vault: narrative.vault,
-        stockMint: narrative.stockMint,
-        stockTokenProgram: program,
-        tokensIn: held,
-        minStockOut: 0n,
-      }),
-    ]);
+    await run(owner, async () => ({
+      instructions: [
+        getCreateAssociatedTokenIdempotentInstruction({
+          payer: createNoopSigner(owner),
+          ata: stockAta,
+          owner,
+          mint: narrative.stockMint,
+          tokenProgram: program,
+        }),
+        getSellInstruction({
+          seller: owner,
+          narrative: narrative.address,
+          narrativeMint: narrative.narrativeMint,
+          sellerTokenAccount: tokenAta,
+          sellerStockAccount: stockAta,
+          vault: narrative.vault,
+          stockMint: narrative.stockMint,
+          stockTokenProgram: program,
+          tokensIn: held,
+          minStockOut: 0n,
+        }),
+      ],
+    }));
   };
 
   // Spendable SOL in dollars, with the reserve held back.
@@ -617,25 +654,27 @@ export function RedeemPanel({
       TOKEN_2022_PROGRAM,
     );
 
-    await run(owner, [
-      getCreateAssociatedTokenIdempotentInstruction({
-        payer: createNoopSigner(owner),
-        ata: stockAta,
-        owner,
-        mint: narrative.stockMint,
-        tokenProgram: program,
-      }),
-      getRedeemInstruction({
-        holder: owner,
-        narrative: narrative.address,
-        narrativeMint: narrative.narrativeMint,
-        holderTokenAccount: tokenAta,
-        holderStockAccount: stockAta,
-        vault: narrative.vault,
-        stockMint: narrative.stockMint,
-        stockTokenProgram: program,
-      }),
-    ]);
+    await run(owner, async () => ({
+      instructions: [
+        getCreateAssociatedTokenIdempotentInstruction({
+          payer: createNoopSigner(owner),
+          ata: stockAta,
+          owner,
+          mint: narrative.stockMint,
+          tokenProgram: program,
+        }),
+        getRedeemInstruction({
+          holder: owner,
+          narrative: narrative.address,
+          narrativeMint: narrative.narrativeMint,
+          holderTokenAccount: tokenAta,
+          holderStockAccount: stockAta,
+          vault: narrative.vault,
+          stockMint: narrative.stockMint,
+          stockTokenProgram: program,
+        }),
+      ],
+    }));
   };
 
   if (compact) {
