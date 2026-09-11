@@ -119,7 +119,7 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
   const points: HighlightPoint[] = [];
   // Supply before the week: today's supply minus everything minted since.
   let minted = 0n;
-  const deltas: { t: number; tokens: Map<Address, bigint>; vault: bigint }[] = [];
+  const deltas: { t: number; tokens: Map<Address, bigint>; vault: bigint; stock: Map<Address, bigint> }[] = [];
 
   for (let i = 0; i < txs.length; i++) {
     const meta = txs[i]?.meta;
@@ -130,6 +130,8 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
       pre.set(b.accountIndex, { mint: b.mint, owner: b.owner ?? undefined, amount: BigInt(b.uiTokenAmount.amount) });
     }
     const tokens = new Map<Address, bigint>();
+    // Each wallet's own stock balance change: what a sale or conversion paid *them*.
+    const stock = new Map<Address, bigint>();
     let vault = 0n;
     const seen = new Set<number>();
     for (const b of meta.postTokenBalances ?? []) {
@@ -141,6 +143,10 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
         tokens.set(owner, (tokens.get(owner) ?? 0n) + delta);
       }
       if (b.mint === n.stockMint && b.owner === address) vault += delta;
+      else if (b.mint === n.stockMint && b.owner) {
+        const owner = b.owner as Address;
+        stock.set(owner, (stock.get(owner) ?? 0n) + delta);
+      }
     }
     for (const [index, b] of pre) {
       if (seen.has(index)) continue;
@@ -150,7 +156,7 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
       }
     }
     for (const d of tokens.values()) minted += d;
-    deltas.push({ t, tokens, vault });
+    deltas.push({ t, tokens, vault, stock });
   }
 
   let supply = n.supply - minted;
@@ -168,8 +174,9 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
         const cost = d.vault > 0n ? d.vault : 0n;
         open.push({ t: d.t, tokens: delta, cost: cost + applyBps(cost, n.feeBps) });
       } else {
-        // A sell or a conversion: whatever left the vault went to them. Match
-        // it against their oldest tokens first.
+        // A sell or a conversion: what landed in their own stock account. One
+        // conversion can pay several holders at once, so the vault's outflow
+        // is not theirs alone. Match it against their oldest tokens first.
         let remaining = -delta;
         let cost = 0n;
         let boughtAt = d.t;
@@ -189,7 +196,7 @@ async function replay(address: Address, n: Narrative, since: number): Promise<Re
             t: d.t,
             tokens: -delta - remaining,
             cost,
-            received: d.vault < 0n ? -d.vault : 0n,
+            received: (d.stock.get(owner) ?? 0n) > 0n ? d.stock.get(owner)! : 0n,
             boughtAt,
             kind: d.t >= Number(n.expiryTs) ? "converted" : "sold",
           });
