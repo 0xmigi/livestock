@@ -446,10 +446,12 @@ export function Explainer({ story: given, className = "" }: { story?: StoryDef; 
           <div className="mono text-[11px] text-neutral-400">$100 in {STOCK}</div>
           <div className="mono mt-1 text-2xl font-semibold leading-none text-neutral-900">${stockNow.toFixed(0)}</div>
         </div>
-        {/* Only while the token is live. Before, it does not exist; after, it is stock. The slot keeps its width. */}
-        <div className={`min-w-[7.5rem] ${phase === "live" ? "" : "invisible"}`} aria-hidden={phase !== "live"}>
+        {/* Before launch the token does not exist; the slot keeps its width. After expiry it is stock, so the number follows the stock from where the narrative left it. */}
+        <div className={`min-w-[7.5rem] ${phase === "before" ? "invisible" : ""}`} aria-hidden={phase === "before"}>
           <div className="mono text-[11px] text-neutral-400">$100 in {NARRATIVE}</div>
-          <div className="mono mt-1 text-2xl font-semibold leading-none text-success">${narrativeLast.toFixed(0)}</div>
+          <div className="mono mt-1 text-2xl font-semibold leading-none text-success">
+            ${(phase === "after" && multiple ? multiple * stockNow : narrativeLast).toFixed(0)}
+          </div>
         </div>
         </div>
 

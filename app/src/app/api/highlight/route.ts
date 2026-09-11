@@ -14,7 +14,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { applyBps, fetchNarratives, netSellProceeds, spotPriceAt, stateAt, type Narrative } from "@nm/client";
+import { applyBps, fetchNarratives, spotPriceAt, type Narrative } from "@nm/client";
 import type { Address, Signature } from "@solana/kit";
 
 import { rpc } from "@/lib/server/rpc";
@@ -215,9 +215,8 @@ const STAKE = 1_000;
 
 /**
  * The winner's trade as two share counts over time. The narrative line is
- * what their tokens would have fetched if sold at each moment — the sell
- * formula at the supply then, tax off — and ends at what they actually
- * received. The stock line is the same money in shares, which never changes;
+ * their tokens marked at the curve's price at each moment — the same thing
+ * the example draws — and ends at what they actually received. The stock line is the same money in shares, which never changes;
  * the price beside each point is what moves both lines in dollars. The stock
  * alone runs on a little before the entry and after the exit, so the trade
  * can be shown in the middle of the stock's own day.
@@ -260,8 +259,8 @@ async function buildSeries(n: Narrative, snapshots: Snapshot[], exit: Exit): Pro
   };
   const narrativeShares = (supply: bigint) => {
     if (tokens > supply || tokens === 0n) return 0;
-    const proceeds = netSellProceeds(stateAt(n, n.supply, supply), tokens, n.sellTaxBps);
-    return (Number(proceeds) / Number(costOfExited)) * stockShares;
+    const marked = Number(tokens) * spotPriceAt(n, n.supply, supply);
+    return (marked / Number(costOfExited)) * stockShares;
   };
 
   const times = new Set<number>([t0 - before, t0, t1, t1 + after]);

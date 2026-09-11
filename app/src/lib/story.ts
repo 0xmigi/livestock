@@ -182,6 +182,25 @@ function humanDuration(secs: number): string {
 }
 
 /**
+ * A y-range that frames whatever a story does: both lines inside it with a
+ * little air, never so tight that a quiet stock's day fills the chart, and
+ * always including the $100 the story starts from.
+ */
+function frame(ticks: StoryTick[]): [number, number] {
+  const values = ticks.flatMap((k) => (k.narrative === null ? [k.stock] : [k.stock, k.narrative]));
+  let lo = Math.min(STAKE, ...values);
+  let hi = Math.max(STAKE, ...values);
+  const minSpan = RANGE_MAX - RANGE_MIN;
+  if (hi - lo < minSpan) {
+    const mid = (hi + lo) / 2;
+    lo = mid - minSpan / 2;
+    hi = mid + minSpan / 2;
+  }
+  const air = (hi - lo) * 0.08;
+  return [Math.floor(lo - air), Math.ceil(hi + air)];
+}
+
+/**
  * A real trade on the example's clock. The trade's own span, entry to exit,
  * fills the live phase; the stock's price just before entry and after exit
  * fills the phases either side, so the story plays the same way whether it
@@ -235,15 +254,12 @@ export function tradeStory(input: TradeInput): StoryDef | null {
     ticks.push({ t: (tick * TICK_MS) / 1000, stock: stockUsd(p), narrative: live ? narrativeUsd(p) : null });
   }
 
-  const values = ticks.flatMap((k) => (k.narrative === null ? [k.stock] : [k.stock, k.narrative]));
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
   return {
     ticks,
     launchAt: LAUNCH_AT,
     expiryAt: EXPIRY_AT,
     loopSecs: LOOP_SECS,
-    range: [Math.min(RANGE_MIN, Math.floor(lo * 0.98)), Math.max(RANGE_MAX, Math.ceil(hi * 1.02))],
+    range: frame(ticks),
     stock: { symbol: input.stockSymbol },
     narrative: { symbol: input.narrativeSymbol, name: input.narrativeName },
     multiple: input.multiple,
