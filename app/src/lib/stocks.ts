@@ -18,7 +18,8 @@ import { address } from "@solana/kit";
 import type { StockListing } from "@/app/api/stocks/route";
 import { CLUSTER, ENV_STOCKS, getStocks, setStocks, type StockInfo } from "./config";
 
-const REFRESH_MS = 60_000;
+/** Matches how long the server holds the list; polling faster would only re-read its cache. */
+const REFRESH_MS = 5 * 60_000;
 
 type State = {
   /** True once the first answer, good or bad, has arrived. */

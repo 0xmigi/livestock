@@ -13,8 +13,8 @@ import { stringifyBig } from "@/lib/json-big";
 import { decorateNarratives, scanNarratives, type ScannedNarrative } from "@/lib/scan";
 import { rpc } from "@/lib/server/rpc";
 
-/** How long one scan serves everyone. */
-const TTL_MS = 15_000;
+/** How long one scan serves everyone. Browsers poll at the same pace (see src/lib/narratives.ts). */
+const TTL_MS = 30_000;
 /** How long a narrative's metadata is trusted before it is fetched again. */
 const META_MAX_AGE_MS = 5 * 60_000;
 

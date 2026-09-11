@@ -22,7 +22,12 @@ import { assetIdForMint, fetchCandles } from "@/lib/server/tokens";
 
 const WEEK = 7 * 24 * 3600;
 const MAX_SIGNATURES = 1000;
-const CACHE_MS = 60_000;
+/**
+ * How long one replay serves everyone. The replay re-reads a week of every
+ * narrative's transactions, so it is the most expensive thing the server
+ * does; the best trade of the week does not change by the minute.
+ */
+const CACHE_MS = 10 * 60_000;
 
 export type HighlightPoint = { t: number; spot: number };
 
@@ -336,5 +341,7 @@ export async function GET() {
       return NextResponse.json({ error: cause instanceof Error ? cause.message : String(cause) }, { status: 502 });
     }
   }
-  return NextResponse.json(cached.body, { headers: { "Cache-Control": "public, s-maxage=60" } });
+  return NextResponse.json(cached.body, {
+    headers: { "Cache-Control": `public, s-maxage=${CACHE_MS / 1000}, stale-while-revalidate=${CACHE_MS / 1000}` },
+  });
 }

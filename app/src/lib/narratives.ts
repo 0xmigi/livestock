@@ -116,26 +116,56 @@ async function loadAll(): Promise<NarrativeRow[]> {
   return rows.sort((a, b) => Number(a.expiryTs) - Number(b.expiryTs));
 }
 
-export function useNarratives(intervalMs = 10_000) {
-  const [rows, setRows] = useState<NarrativeRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * How often the list is re-fetched while something shows it. The server
+ * holds a scan for as long, so polling faster would only re-read the cache.
+ */
+const NARRATIVES_REFRESH_MS = 30_000;
 
-  const refresh = useCallback(async () => {
-    try {
-      setRows(await loadAll());
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+// One poll per tab, shared by every component that shows the list: the home
+// page and the wallet each used to run their own, doubling the server's load.
+let shared: { rows: NarrativeRow[] | null; error: string | null } = { rows: null, error: null };
+const listListeners = new Set<() => void>();
+let listTimer: ReturnType<typeof setInterval> | null = null;
+let listInflight: Promise<void> | null = null;
+
+function refreshList(): Promise<void> {
+  listInflight ??= loadAll()
+    .then(
+      (rows) => {
+        shared = { rows, error: null };
+      },
+      (cause: unknown) => {
+        shared = { ...shared, error: cause instanceof Error ? cause.message : String(cause) };
+      },
+    )
+    .finally(() => {
+      listInflight = null;
+      listListeners.forEach((listener) => listener());
+    });
+  return listInflight;
+}
+
+function subscribeList(listener: () => void): () => void {
+  listListeners.add(listener);
+  if (listListeners.size === 1) {
+    void refreshList();
+    listTimer = setInterval(() => void refreshList(), NARRATIVES_REFRESH_MS);
+  }
+  return () => {
+    listListeners.delete(listener);
+    if (listListeners.size === 0 && listTimer) {
+      clearInterval(listTimer);
+      listTimer = null;
     }
-  }, []);
+  };
+}
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), intervalMs);
-    return () => clearInterval(timer);
-  }, [refresh, intervalMs]);
-
-  return { rows, error, refresh };
+/** Every narrative, polled once per tab however many components ask. */
+export function useNarratives() {
+  const [, tick] = useState(0);
+  useEffect(() => subscribeList(() => tick((n) => n + 1)), []);
+  return { rows: shared.rows, error: shared.error, refresh: refreshList };
 }
 
 /** One narrative, the connected wallet's position, and the creator's stake. */

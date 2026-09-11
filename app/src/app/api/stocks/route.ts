@@ -19,8 +19,12 @@ const TOKENS_API = "https://api.tokens.xyz/v1";
 /** Curated lists to merge, in priority order. `stocks` already has the ETFs people ask for; `etfs` adds the rest. */
 const LISTS = ["stocks", "etfs"];
 
-/** How long a fetched list is reused before the API is asked again. */
-const REVALIDATE_SECONDS = 60;
+/**
+ * How long a fetched list is reused before the API is asked again. The list
+ * of tokenized stocks changes rarely; the SOL price rides along and is at
+ * most this stale when a buy is sized, which the swap quote then corrects.
+ */
+const REVALIDATE_SECONDS = 300;
 
 /** One stock as the browser sees it. */
 export type StockListing = {
@@ -188,7 +192,7 @@ export async function GET() {
       { stocks, solUsd, fetchedAt: Date.now() },
       {
         headers: {
-          "Cache-Control": `public, s-maxage=${REVALIDATE_SECONDS}, stale-while-revalidate=300`,
+          "Cache-Control": `public, s-maxage=${REVALIDATE_SECONDS}, stale-while-revalidate=${REVALIDATE_SECONDS}`,
         },
       },
     );
