@@ -1,0 +1,53 @@
+# Program tests and workspace typecheck on every push and pull request.
+#
+# The program's integration tests run the real binary in LiteSVM, so the job
+# builds it for SBF first with Agave's platform tools.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  AGAVE_VERSION: 4.2.2
+
+jobs:
+  program:
+    name: program tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: Cache Agave platform tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/solana
+          key: agave-${{ env.AGAVE_VERSION }}-${{ runner.os }}
+      - name: Install Agave
+        run: |
+          if [ ! -x "$HOME/.local/share/solana/install/active_release/bin/cargo-build-sbf" ]; then
+            sh -c "$(curl -sSfL https://release.anza.xyz/v${AGAVE_VERSION}/install)"
+          fi
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Build the program
+        run: cargo build-sbf
+      - name: Test the program
+        run: cargo test -p livestock
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:client
+      - run: pnpm -r typecheck
