@@ -122,10 +122,8 @@ pnpm --filter @nm/scripts run keeper
 
 In production, run the same script as a long-lived process (Railway, or any
 box): set `KEEPER_KEYPAIR` to a funded keypair as a JSON byte array and
-`RPC_URL`, and start it with `pnpm --filter @nm/scripts run keeper`. Vercel's
-free tier only allows daily crons, so there is no cron there; `/api/keeper`
-still does one pass per call for any external scheduler, guarded by
-`CRON_SECRET` as a bearer token. New
+`RPC_URL`, and start it with `pnpm --filter @nm/scripts run keeper`. The app
+itself runs no keeper: Vercel's free tier only allows daily crons. New
 narrative mints name their narrative as permanent delegate, which is what lets
 the program burn on holders' behalf; narratives created before that keep the
 manual Redeem button.
