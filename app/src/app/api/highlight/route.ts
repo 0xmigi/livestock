@@ -33,10 +33,11 @@ export type HighlightPoint = { t: number; spot: number };
 
 /**
  * One moment of the trade, per $1,000 put in at the entry:
- * shares of the stock the narrative position would fetch if sold then,
+ * shares of the stock the narrative position would fetch if sold then (null
+ * before the entry and after the exit, where only the stock is drawn),
  * shares the same money bought outright, and the stock's price then.
  */
-export type SeriesPoint = { t: number; narrative: number; stock: number; price: number };
+export type SeriesPoint = { t: number; narrative: number | null; stock: number; price: number };
 
 export type Highlight = {
   found: true;
@@ -215,10 +216,11 @@ const STAKE = 1_000;
 /**
  * The winner's trade as two share counts over time. The narrative line is
  * what their tokens would have fetched if sold at each moment — the sell
- * formula at the supply then, tax off — and ends just before their exit, at
- * the supply they actually sold into. The stock line is the same money in
- * shares, which never changes; the price beside each point is what moves
- * both lines in dollars.
+ * formula at the supply then, tax off — and ends at what they actually
+ * received. The stock line is the same money in shares, which never changes;
+ * the price beside each point is what moves both lines in dollars. The stock
+ * alone runs on a little before the entry and after the exit, so the trade
+ * can be shown in the middle of the stock's own day.
  */
 async function buildSeries(n: Narrative, snapshots: Snapshot[], exit: Exit): Promise<SeriesPoint[]> {
   const assetId = await assetIdForMint(n.stockMint);
@@ -227,7 +229,11 @@ async function buildSeries(n: Narrative, snapshots: Snapshot[], exit: Exit): Pro
   const t1 = exit.t;
   const owner = exit.owner;
   const costOfExited = exit.cost;
-  const candles = await fetchCandles(assetId, t0 - 3600, t1 + 60);
+  // Either side of the trade, in proportion to its length: an hour at least, three days at most.
+  const clamp = (secs: number) => Math.min(3 * 86_400, Math.max(3_600, Math.round(secs)));
+  const before = clamp((t1 - t0) * 0.4);
+  const after = clamp((t1 - t0) * 0.6);
+  const candles = await fetchCandles(assetId, t0 - before, t1 + after);
   if (candles.length === 0) return [];
   const priceAt = (t: number) => {
     let price = candles[0].close;
@@ -258,18 +264,18 @@ async function buildSeries(n: Narrative, snapshots: Snapshot[], exit: Exit): Pro
     return (Number(proceeds) / Number(costOfExited)) * stockShares;
   };
 
-  const times = new Set<number>([t0, t1]);
+  const times = new Set<number>([t0 - before, t0, t1, t1 + after]);
   for (const s of stops) times.add(s.t);
-  for (const c of candles) if (c.time > t0 && c.time < t1) times.add(c.time);
-  // The last point is what they actually walked away with: a conversion pays
-  // the vault's average price, not the sell formula, so the line ends at the
-  // real payout rather than at what a sale would have fetched.
+  for (const c of candles) if (c.time > t0 - before && c.time < t1 + after) times.add(c.time);
+  // The last point of the trade is what they actually walked away with: a
+  // conversion pays the vault's average price, not the sell formula, so the
+  // line ends at the real payout rather than at what a sale would have fetched.
   const receivedShares = (Number(exit.received) / Number(exit.cost)) * stockShares;
   return [...times]
     .sort((a, b) => a - b)
     .map((t) => ({
       t,
-      narrative: t === t1 ? receivedShares : narrativeShares(supplyAt(t)),
+      narrative: t < t0 || t > t1 ? null : t === t1 ? receivedShares : narrativeShares(supplyAt(t)),
       stock: stockShares,
       price: priceAt(t),
     }));

@@ -8,7 +8,11 @@
  * the date the narrative line ends: the whole supply is stock now, and the
  * number underneath follows the stock from where the narrative left it.
  * Then it starts again.
- * Seeded, so every loop is the same picture.
+ *
+ * The story it plays is an input (see lib/story): the seeded example by
+ * default, so every loop is the same picture, or a real trade read from the
+ * chain and laid onto the same clock, in which case the "post" beat is who
+ * made the trade.
  *
  * Almost no words. The chart does the talking: the post, two numbers.
  */
@@ -16,31 +20,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Liveline, type LivelinePoint, type LivelineSeries } from "liveline";
 
-import { formatUsdCompact } from "@/lib/config";
+import { formatUsdCompact, shortAddress } from "@/lib/config";
 import { useStocks } from "@/lib/stocks";
-import {
-  EXPIRY_AT,
-  FEE,
-  LAUNCH_AT,
-  LOOP_SECS,
-  NARRATIVE,
-  POST,
-  RANGE_MAX,
-  RANGE_MIN,
-  rng,
-  SEED,
-  STAKE,
-  step,
-  STOCK,
-  TICK_MS,
-} from "@/lib/story";
+import { exampleStory, STAKE, TICK_MS, type StoryDef } from "@/lib/story";
 import { useTheme } from "@/lib/theme";
 
 /** How far into the loop the page opens, so the chart is never empty. */
 const OPEN_AT = 3;
 /** Seconds after launch before the third beat lands. */
 const LAUNCH_BEAT_SECS = 2.5;
-const TICKS = { launch: (LAUNCH_AT * 1000) / TICK_MS, expiry: (EXPIRY_AT * 1000) / TICK_MS, loop: (LOOP_SECS * 1000) / TICK_MS };
 
 /**
  * The y-range is pinned (see the "range" series) so the overlay can map
@@ -107,15 +95,26 @@ function measureNarrative(boxEl: HTMLDivElement | null): { dotX: number; dotY: n
   return { dotX: (dot - 3) / scale, dotY: (cnt ? rows / cnt : 0) / scale, leftX: left / scale };
 }
 
-function phaseAt(tick: number): Phase {
-  if (tick < TICKS.launch) return "before";
-  if (tick < TICKS.expiry) return "live";
+type Ticks = { launch: number; expiry: number; loop: number };
+
+function phaseAt(tick: number, ticks: Ticks): Phase {
+  if (tick < ticks.launch) return "before";
+  if (tick < ticks.expiry) return "live";
   return "after";
 }
 
-
-export function Explainer({ className = "" }: { className?: string }) {
+export function Explainer({ story: given, className = "" }: { story?: StoryDef; className?: string }) {
   const { theme } = useTheme();
+  const example = useMemo(exampleStory, []);
+  const story = given ?? example;
+  const { launchAt: LAUNCH_AT, expiryAt: EXPIRY_AT, loopSecs: LOOP_SECS } = story;
+  const [RANGE_MIN, RANGE_MAX] = story.range;
+  const STOCK = story.stock.symbol;
+  const NARRATIVE = story.narrative.symbol;
+  const TICKS = useMemo<Ticks>(
+    () => ({ launch: (LAUNCH_AT * 1000) / TICK_MS, expiry: (EXPIRY_AT * 1000) / TICK_MS, loop: (LOOP_SECS * 1000) / TICK_MS }),
+    [LAUNCH_AT, EXPIRY_AT, LOOP_SECS],
+  );
   const [phase, setPhase] = useState<Phase>("before");
   /** At expiry: the chart's $100 in the narrative, as stock, over a straight buy's. See the tick loop. */
   const [multiple, setMultiple] = useState<number | null>(null);
@@ -143,73 +142,44 @@ export function Explainer({ className = "" }: { className?: string }) {
   useEffect(() => {
     let alive = true;
     let tick = 0;
-    let stockValue = STAKE;
-    let anchor = STAKE;
-    let narrativeValue = STAKE;
-    let ratioSum = 0;
-    let ratioCount = 0;
     let lastPhase: Phase = "before";
-    let random = rng(SEED);
 
     const reset = () => {
       tick = 0;
-      stockValue = STAKE;
-      anchor = STAKE;
-      narrativeValue = STAKE;
-      random = rng(SEED);
       lastPhase = "before";
       setStock([]);
       setNarrative([]);
       phaseRef.current = "before";
       setPhase("before");
       setT(0);
+      setMultiple(null);
       setLoop((n) => n + 1);
     };
     reset();
 
     // One tick of the story at a given unix time (liveline wants seconds).
+    // The values are precomputed (lib/story): the seeded walk, or a real
+    // trade resampled onto this clock.
     const advance = (now: number) => {
       tick += 1;
       tickAt.current = now;
       setT((tick * TICK_MS) / 1000);
-      const p = phaseAt(tick);
+      const p = phaseAt(tick, TICKS);
+      const k = story.ticks[Math.min(tick, story.ticks.length) - 1];
 
-      // The stock has a normal day: it wanders a few percent (a large
-      // stock's daily range is 3-5%) but is pulled back toward a barely
-      // drifting anchor, so it moves without trending away. A small bump
-      // when the post lands; the narrative absorbs most of the reaction.
-      anchor *= 1 + 0.00003;
-      const pull = ((anchor - stockValue) / stockValue) * 0.04;
-      const bump = tick >= TICKS.launch && tick < TICKS.launch + 12 ? 0.0035 : 0;
-      stockValue = step(random, stockValue, pull + bump, 0.013);
-      setStock((d) => [...d, { time: now, value: stockValue }]);
+      setStock((d) => [...d, { time: now, value: k.stock }]);
 
       if (p === "live") {
-        if (lastPhase === "before") {
-          // Launch: the narrative starts at exactly the stock's price.
-          narrativeValue = stockValue;
-        } else {
-          // Then runs hot while the story is fresh, dwindles as it ages, and
-          // sells off into expiry. A leveraged story with a clock on it.
-          const age = (tick - TICKS.launch) / (TICKS.expiry - TICKS.launch);
-          const drift = age < 0.55 ? 0.0065 : age < 0.8 ? -0.0005 : -0.003;
-          narrativeValue = step(random, narrativeValue, drift, 0.014);
+        if (k.narrative !== null) {
+          const value = k.narrative;
+          setNarrative((d) => [...d, { time: now, value }]);
         }
-        setNarrative((d) => [...d, { time: now, value: narrativeValue }]);
-        ratioSum += narrativeValue / stockValue;
-        ratioCount += 1;
       } else if (p === "after" && lastPhase === "live") {
-        // What the $100 shown on the chart (bought at launch) actually ends
-        // up with, in stock, next to a straight buy of the stock at the same
-        // moment. Never say "early buyer": the point is the mechanism, not
-        // who got in first. At expiry every token
-        // redeems for its share of the vault, and the vault holds what all
-        // buyers paid in (less the 1% fee), so a token is worth the average
-        // price paid, not the last price. With buying spread evenly over the
-        // token's life that average is the mean of its price in stock terms.
-        // No sells are modelled; sells would leave their 10% exit tax behind
-        // and raise this slightly.
-        setMultiple((1 - FEE) * (ratioSum / ratioCount));
+        // What the $100 shown on the chart actually ends up with, in stock,
+        // next to a straight buy of the stock at the same moment. For the
+        // example that is the vault's average price (see lib/story); for a
+        // real trade it is what the wallet received over what it paid.
+        setMultiple(story.multiple);
       }
       // After expiry nothing more happens to the narrative. liveline keeps
       // drawing it flat out to the live tip; the overlay covers that stretch
@@ -273,24 +243,33 @@ export function Explainer({ className = "" }: { className?: string }) {
       clearInterval(timer);
       cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [story, TICKS]);
 
   // The story in words, one beat at a time, timed to the chart. Only the
   // current beat is shown. Numbers come from the registry and the
   // simulation, never typed in, so they cannot disagree with the chart.
   const { stocks } = useStocks();
   const cap = stocks.find((s) => s.symbol.toUpperCase() === STOCK.toUpperCase())?.marketCapUsd;
+  const beatDef = story.beat;
+  const sold = beatDef.kind === "trade" && beatDef.exit === "sold";
   const BEATS = [
     <>
       <span className="text-neutral-900">{STOCK}</span> trades on Solana
       {cap ? <>, {formatUsdCompact(cap)} on chain</> : null}.
     </>,
-    null, // The post itself stands in for this beat.
+    null, // The post, or the trade, stands in for this beat.
+    beatDef.kind === "post" ? (
+      <>
+        Someone launches <span className="text-neutral-900">{NARRATIVE}</span> on {STOCK}, two-week expiry.
+      </>
+    ) : (
+      <>
+        <span className="mono">{shortAddress(beatDef.owner)}</span> buys{" "}
+        <span className="text-neutral-900">{NARRATIVE}</span> on {STOCK}, {beatDef.duration} expiry.
+      </>
+    ),
     <>
-      Someone launches <span className="text-neutral-900">{NARRATIVE}</span> on {STOCK}, two-week expiry.
-    </>,
-    <>
-      That $100 in {NARRATIVE} redeems for{" "}
+      That $100 in {NARRATIVE} {sold ? "sold for" : "redeems for"}{" "}
       <span className="text-neutral-900">{multiple ? `${multiple.toFixed(1)}×` : "more"}</span> the {STOCK} a
       straight buy got.
     </>,
@@ -381,9 +360,9 @@ export function Explainer({ className = "" }: { className?: string }) {
   const stopped = phase === "after" && head !== null;
   return (
     <div className={`relative min-w-0 overflow-hidden rounded bg-neutral-50 p-5 ${className}`}>
-      {/* So nobody reads it as live data. */}
+      {/* "example", so nobody reads the seeded story as live data; or which trade this is. */}
       <div className="mono pointer-events-none absolute left-5 top-4 text-[10px] uppercase tracking-[0.18em] text-neutral-400">
-        example
+        {story.label}
       </div>
       <div ref={box} className="explainer-chart relative h-48 w-full min-w-0">
         <Liveline
@@ -428,7 +407,7 @@ export function Explainer({ className = "" }: { className?: string }) {
         ) : null}
         {expiryX !== null && !stopped ? (
           <div className="mono pointer-events-none absolute top-0 text-[11px] text-neutral-400" style={{ left: expiryX + 6 }}>
-            expiry
+            {sold ? "sold" : "expiry"}
           </div>
         ) : null}
         {/* On a phone the label is shorter and sits a line lower, clear of the "example" tag. */}
@@ -440,8 +419,14 @@ export function Explainer({ className = "" }: { className?: string }) {
               ...(expiryX > size.w - 220 ? { right: size.w - expiryX + 6, textAlign: "right" } : { left: expiryX + 6 }),
             }}
           >
-            <span className="block text-neutral-400">expired</span>
-            <span className="block text-neutral-900">{narrow ? `converted to ${STOCK}` : `all ${NARRATIVE} converted to ${STOCK}`}</span>
+            <span className="block text-neutral-400">{sold ? "sold" : "expired"}</span>
+            <span className="block text-neutral-900">
+              {sold
+                ? `${NARRATIVE} sold for ${STOCK}`
+                : narrow
+                  ? `converted to ${STOCK}`
+                  : `all ${NARRATIVE} converted to ${STOCK}`}
+            </span>
           </div>
         ) : null}
         {/* The narrative's label while it is live, at liveline's own dot. */}
@@ -468,28 +453,33 @@ export function Explainer({ className = "" }: { className?: string }) {
         </div>
         </div>
 
-        {/* One beat at a time. The post is the second beat. Fixed height so nothing shifts. */}
+        {/* One beat at a time. The post, or the trade, is the second beat. Fixed height so nothing shifts. */}
         {/* A rule marks where each beat lands; the sentences are italic, the post is not. */}
         <div key={beat} className="explainer-beat flex h-10 min-w-0 flex-1 items-center border-l-2 border-neutral-200 pl-4 sm:h-full">
-          {beat === 1 ? (
+          {beat === 1 && beatDef.kind === "post" ? (
             <div className="flex items-center gap-4">
               <p className="shrink-0 text-sm italic leading-snug text-neutral-600">Elon posts</p>
             <div className="flex min-w-0 items-start gap-2.5">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-semibold text-white">
-                {POST.name[0]}
+                {beatDef.post.name[0]}
               </span>
               <span className="min-w-0">
                 <span className="flex items-center gap-1 text-xs leading-tight">
-                  <span className="font-semibold text-neutral-900">{POST.name}</span>
+                  <span className="font-semibold text-neutral-900">{beatDef.post.name}</span>
                   <svg viewBox="0 0 22 22" className="h-3.5 w-3.5 shrink-0 fill-[#1d9bf0]" aria-label="Verified">
                     <path d="M20.4 11c0-1.2-.7-2.3-1.7-2.8.3-1.1 0-2.3-.9-3.1-.8-.8-2-1.1-3.1-.9C14.2 3.2 13.1 2.5 11.9 2.5s-2.3.7-2.8 1.7c-1.1-.3-2.3 0-3.1.9-.8.8-1.1 2-.9 3.1-1 .5-1.7 1.6-1.7 2.8s.7 2.3 1.7 2.8c-.3 1.1 0 2.3.9 3.1.8.8 2 1.1 3.1.9.5 1 1.6 1.7 2.8 1.7s2.3-.7 2.8-1.7c1.1.3 2.3 0 3.1-.9.8-.8 1.1-2 .9-3.1 1-.5 1.7-1.6 1.7-2.8zm-9.6 4.3L7.4 12l1.4-1.4 2 2 4.4-4.4 1.4 1.4-5.8 5.7z" />
                   </svg>
-                  <span className="ml-0.5 text-neutral-400">{POST.handle}</span>
+                  <span className="ml-0.5 text-neutral-400">{beatDef.post.handle}</span>
                 </span>
-                <span className="block text-sm leading-snug text-neutral-900">{POST.text}</span>
+                <span className="block text-sm leading-snug text-neutral-900">{beatDef.post.text}</span>
               </span>
             </div>
             </div>
+          ) : beat === 1 && beatDef.kind === "trade" ? (
+            <p className="min-w-0 truncate text-sm leading-snug text-neutral-600">
+              <span className="mono">{shortAddress(beatDef.owner)}</span> bought{" "}
+              <span className="font-medium text-neutral-900">{story.narrative.name}</span>
+            </p>
           ) : (
             <p className="text-sm italic leading-snug text-neutral-600">{BEATS[beat]}</p>
           )}
