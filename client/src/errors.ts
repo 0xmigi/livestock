@@ -5,6 +5,8 @@
  * `custom program error: 0x<n>`.
  */
 
+import { NARRATIVE_MARKETS_PROGRAM_ID } from "./pdas.ts";
+
 export enum MarketErrorCode {
   NotLive = 0,
   NotExpired = 1,
@@ -65,17 +67,30 @@ export function describeTransactionError(error: unknown): string {
   const raw =
     error instanceof Error ? error.message : String(error ?? "Unknown error");
 
-  const match = /custom program error: (0x[0-9a-fA-F]+|\d+)/.exec(raw);
-  if (match) {
-    const code = match[1].startsWith("0x")
-      ? Number.parseInt(match[1], 16)
-      : Number.parseInt(match[1], 10);
-    return describeErrorCode(code) ?? `Program error ${code}`;
+  // Balance first. A wallet short on rent fails in the System program with
+  // its error 1, a number that means something else entirely in this program.
+  if (/insufficient lamports|insufficient funds for fee|no record of a prior credit/i.test(raw)) {
+    return "Not enough SOL for this transaction.";
   }
-
   if (/insufficient funds|InsufficientFunds/i.test(raw)) {
     return "Not enough balance for this transaction.";
   }
+
+  // Codes are per program, so one is only read as ours when the log line
+  // names this program, or names none at all.
+  const match =
+    /(?:Program (\w+) failed: )?custom program error: (0x[0-9a-fA-F]+|\d+)/.exec(raw);
+  if (match) {
+    const [, program, value] = match;
+    const code = value.startsWith("0x")
+      ? Number.parseInt(value, 16)
+      : Number.parseInt(value, 10);
+    if (program === undefined || program === NARRATIVE_MARKETS_PROGRAM_ID) {
+      return describeErrorCode(code) ?? `Program error ${code}`;
+    }
+    return `Program ${program} failed with error ${code}.`;
+  }
+
   if (/user rejected|declined|cancelled|canceled/i.test(raw)) {
     return "Transaction cancelled.";
   }

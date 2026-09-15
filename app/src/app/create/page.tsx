@@ -42,7 +42,7 @@ import {
   StockLogo,
   Tile,
 } from "@/components/ui";
-import { useOwner } from "@/components/wallet";
+import { refreshSolBalances, useOwner, useSolBalance } from "@/components/wallet";
 import {
   BIO_MAX_CHARS,
   formatUsd,
@@ -55,6 +55,7 @@ import {
   type StockInfo,
 } from "@/lib/config";
 import { compact } from "@/lib/figures";
+import { launchCost, launchShortfall, useLaunchCost } from "@/lib/launch";
 import { fetchStockTokenProgram, formatDate } from "@/lib/narratives";
 import { useStockPrice } from "@/lib/price";
 import { matchesStock, useSolPrice, useStocks } from "@/lib/stocks";
@@ -85,6 +86,12 @@ const DURATIONS = [
 
 /** The picker scrolls through the whole catalogue; a search narrows it. */
 const PICKER_MATCHES = 60;
+
+/**
+ * Bytes allowed for the metadata URI before it exists: the file store's
+ * address, a slug of at most 40 and an 8-character suffix come to about 111.
+ */
+const URI_ALLOWANCE = 120;
 
 /** 10% is the dial that decides whether people hold to expiry. */
 const SELL_TAX_BPS = 1_000;
@@ -203,6 +210,26 @@ export default function Create() {
   const expiryPreview =
     customTs !== null && dateError === null ? customTs : now + duration + LEAD_SECS;
   const valid = stock !== null && storyValid && virtualStock > 0n && dateError === null;
+
+  // Priced at review, before the wallet is asked. The URI is not known until
+  // the upload, so the mint is sized with room for one.
+  const launchCostEstimate = useLaunchCost(
+    step === "review" ? (stock?.mint ?? null) : null,
+    getNarrativeMintSize(name.trim(), symbol.trim(), "x".repeat(URI_ALLOWANCE)).fundFor,
+  );
+  const solBalance = useSolBalance(owner);
+  const shortfall =
+    launchCostEstimate !== null && solBalance !== null
+      ? launchShortfall(launchCostEstimate, BigInt(Math.round(solBalance * 1e9)))
+      : null;
+
+  // A top-up happens in another app, so look again when the tab is back.
+  useEffect(() => {
+    if (step !== "review") return;
+    window.addEventListener("focus", refreshSolBalances);
+    return () => window.removeEventListener("focus", refreshSolBalances);
+  }, [step]);
+
   const index = STEPS.findIndex((s) => s.id === step);
   const prev = STEPS[index - 1] ?? null;
   const next = STEPS[index + 1] ?? null;
@@ -276,6 +303,15 @@ export default function Create() {
       // payer, so it has to be funded for its final size up front.
       const { fundFor } = getNarrativeMintSize(cleanName, cleanSymbol, uploaded.uri);
       const lamports = await rpc.getMinimumBalanceForRentExemption(BigInt(fundFor)).send();
+
+      // Now exact, with the real URI. Short on rent, the network would refuse
+      // with a System program error that says nothing about SOL.
+      const [cost, { value: balance }] = await Promise.all([
+        launchCost(stock.mint, fundFor),
+        rpc.getBalance(owner, { commitment: "confirmed" }).send(),
+      ]);
+      const short = launchShortfall(cost, balance);
+      if (short) throw new Error(short);
 
       const expiryTs = BigInt(
         customTs !== null && dateError === null
@@ -410,7 +446,7 @@ export default function Create() {
           variant="primary"
           size="lg"
           onClick={create}
-          disabled={busy || !valid}
+          disabled={busy || !valid || shortfall !== null}
         >
           {busy ? "Launching" : "Launch narrative"}
         </Button>
@@ -727,7 +763,11 @@ export default function Create() {
                 The narrative step still needs {!image ? "an image" : "a name and ticker"}.
               </Notice>
             ) : null}
-            {error ? <Notice kind="error">{error}</Notice> : null}
+            {error ? (
+              <Notice kind="error">{error}</Notice>
+            ) : shortfall && !busy ? (
+              <Notice kind="warning">{shortfall}</Notice>
+            ) : null}
             {busy && progress ? <Notice>{progress}</Notice> : null}
             {action}
           </section>

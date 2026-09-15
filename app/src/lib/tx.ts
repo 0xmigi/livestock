@@ -226,15 +226,21 @@ function explainSendFailure(cause: unknown): string {
   const logs = context?.logs;
 
   if (Array.isArray(logs)) {
-    // The last "Program log:" line before the failure is usually the reason.
-    const failing = [...logs]
-      .reverse()
-      .find(
-        (line: unknown) =>
-          typeof line === "string" &&
-          (line.includes("failed") || line.includes("Error")),
-      );
-    if (typeof failing === "string") return failing;
+    const lines = logs.filter((line): line is string => typeof line === "string");
+    // The first program to fail is where it went wrong. Every caller above it
+    // fails too, reporting the same code under its own id: a System transfer
+    // short on rent shows up as the calling program's error 1.
+    const first = lines.findIndex((line) => / failed: /.test(line));
+    if (first >= 0) {
+      // The line before usually says why ("Transfer: insufficient lamports
+      // 1248000, need 1559040"), unless it is only the runtime's bookkeeping.
+      const before = lines[first - 1];
+      const why = before && !/^Program \w+ (invoke|consumed|success)/.test(before) ? `${before}\n` : "";
+      return `${why}${lines[first]}`;
+    }
+
+    const failing = [...lines].reverse().find((line) => line.includes("Error"));
+    if (failing) return failing;
   }
 
   const serverMessage = context?.__serverMessage;
