@@ -57,14 +57,20 @@ function vaultSize(stockMint: Address): Promise<number> {
 const rent = async (bytes: number) =>
   rpc.getMinimumBalanceForRentExemption(BigInt(bytes)).send();
 
-/** Lamports a launch takes from the creator, for a mint of `mintSize` bytes. */
+/**
+ * Lamports a launch needs in the creator's wallet, for a mint of `mintSize`
+ * bytes. More than it spends: a wallet must end a transaction either empty or
+ * above the minimum balance every account keeps, and a launch never leaves it
+ * exactly empty, so that minimum has to still be there afterwards.
+ */
 export async function launchCost(stockMint: Address, mintSize: number): Promise<bigint> {
-  const [mint, narrative, vault] = await Promise.all([
+  const [mint, narrative, vault, floor] = await Promise.all([
     rent(mintSize),
     rent(NARRATIVE_ACCOUNT_LEN),
     vaultSize(stockMint).then(rent),
+    rent(0),
   ]);
-  return mint + narrative + vault + SIGNATURE_FEES;
+  return mint + narrative + vault + SIGNATURE_FEES + floor;
 }
 
 /** The launch cost, recomputed when the stock or the mint's size changes. */
@@ -96,5 +102,5 @@ function sol(lamports: bigint, round: (n: number) => number): string {
 /** Says how far short the wallet is, or null when it can pay. */
 export function launchShortfall(cost: bigint, balance: bigint): string | null {
   if (balance >= cost) return null;
-  return `Launching takes ${sol(cost, Math.ceil)} SOL in rent and fees. This wallet has ${sol(balance, Math.floor)} SOL, so add ${sol(cost - balance, Math.ceil)} SOL.`;
+  return `Launching needs ${sol(cost, Math.ceil)} SOL: rent, fees and the minimum balance a wallet keeps. This one has ${sol(balance, Math.floor)} SOL, so add ${sol(cost - balance, Math.ceil)} SOL.`;
 }

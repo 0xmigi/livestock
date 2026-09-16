@@ -11,6 +11,9 @@
  */
 
 import {
+  isSolanaError,
+  SOLANA_ERROR__TRANSACTION_ERROR__INSUFFICIENT_FUNDS_FOR_FEE,
+  SOLANA_ERROR__TRANSACTION_ERROR__INSUFFICIENT_FUNDS_FOR_RENT,
   appendTransactionMessageInstructions,
   compileTransaction,
   compressTransactionMessageUsingAddressLookupTables,
@@ -222,6 +225,18 @@ export async function signAndSend(
 
 /** Digs the useful line out of an RPC send failure. */
 function explainSendFailure(cause: unknown): string {
+  // Some failures never reach a program: the runtime weighs the fee payer
+  // before and after, and every instruction can succeed while the transaction
+  // still fails. There is no log line to read, only a code on the cause, and
+  // a production build has stripped the text that goes with it.
+  const inner = (cause as { cause?: unknown })?.cause;
+  if (isSolanaError(inner, SOLANA_ERROR__TRANSACTION_ERROR__INSUFFICIENT_FUNDS_FOR_RENT)) {
+    return "Not enough SOL: this would leave the wallet under the minimum balance every account keeps.";
+  }
+  if (isSolanaError(inner, SOLANA_ERROR__TRANSACTION_ERROR__INSUFFICIENT_FUNDS_FOR_FEE)) {
+    return "Not enough SOL for this transaction.";
+  }
+
   const context = (cause as { context?: Record<string, unknown> })?.context;
   const logs = context?.logs;
 
