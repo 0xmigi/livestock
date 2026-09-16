@@ -21,12 +21,12 @@ import {
   convertInstructions,
   expireInstructions,
   planKeeperPass,
+  createThrottledRpc,
 } from "@nm/client";
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
-  createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
   getSignatureFromTransaction,
@@ -42,8 +42,10 @@ import {
 const RPC_URL = process.env.RPC_URL ?? "https://api.devnet.solana.com";
 const WS_URL = process.env.WS_URL ?? RPC_URL.replace(/^http/, "ws");
 const INTERVAL_MS = Number(process.env.INTERVAL_MS ?? 20_000);
+const CLOCK_MARGIN_SECS = 10;
 
-const rpc = createSolanaRpc(RPC_URL);
+// Spaced and retried: the node's rate limit and its occasional "index overloaded" must not fail a pass.
+const rpc = createThrottledRpc(RPC_URL);
 const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
 const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
 
@@ -72,7 +74,9 @@ function stamp(): string {
 }
 
 async function pass(payer: KeyPairSigner): Promise<void> {
-  const plan = await planKeeperPass(rpc, Math.floor(Date.now() / 1000));
+  // The chain's clock can trail this machine's by a few seconds; asking a
+  // moment late costs nothing, asking early fails with TooEarly.
+  const plan = await planKeeperPass(rpc, Math.floor(Date.now() / 1000) - CLOCK_MARGIN_SECS);
 
   for (const entry of plan.toExpire) {
     try {

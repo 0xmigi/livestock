@@ -1,9 +1,6 @@
-import {
-  address,
-  createSolanaRpc,
-  createSolanaRpcSubscriptions,
-} from "@solana/kit";
+import { address, createSolanaRpcSubscriptions } from "@solana/kit";
 import type { Address } from "@solana/kit";
+import { createThrottledRpc } from "@nm/client";
 
 export const APP_NAME = "Livestock";
 
@@ -54,7 +51,8 @@ export function forCluster(url: string | undefined): string | undefined {
 export const RPC_URL = forCluster(process.env.NEXT_PUBLIC_RPC_URL) ?? DEFAULT_RPC;
 export const WS_URL = forCluster(process.env.NEXT_PUBLIC_WS_URL) ?? DEFAULT_WS;
 
-export const rpc = createSolanaRpc(RPC_URL);
+// Spaced and retried: the free Helius tier answers 429 to a burst (see @nm/client rpc.ts).
+export const rpc = createThrottledRpc(RPC_URL);
 export const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
 
 /** Classic SPL Token. */

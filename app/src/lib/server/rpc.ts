@@ -1,4 +1,4 @@
-import { createSolanaRpc } from "@solana/kit";
+import { createThrottledRpc } from "@nm/client";
 
 import { forCluster } from "@/lib/config";
 
@@ -13,6 +13,6 @@ const DEFAULT =
  * `NEXT_PUBLIC_RPC_URL` is the fallback, then the public endpoint. A Helius
  * host follows `NEXT_PUBLIC_CLUSTER` (see `forCluster`).
  */
-export const rpc = createSolanaRpc(
+export const rpc = createThrottledRpc(
   forCluster(process.env.RPC_URL) ?? forCluster(process.env.NEXT_PUBLIC_RPC_URL) ?? DEFAULT,
 );
